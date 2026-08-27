@@ -1,0 +1,2108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<title>牌局原型 V0.22 · 1人 vs 3AI</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;700;900&display=swap');
+
+:root{
+  --felt-1:#2a9e54; --felt-2:#15532c; --felt-3:#0a3a1d;
+  --gold:#ffd166; --gold-d:#c8902a;
+  --red:#e63946; --red-d:#9e1b27;
+  --card:#fbf6e9; --black:#1c1c1c; --redcard:#cf2a2f;
+  --text:#fff7e6; --muted:#bcd6c4;
+  --line:#2f6b45;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden}
+body{
+  background:#062014;color:var(--text);
+  font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-tap-highlight-color:transparent;
+}
+button{font:inherit;cursor:pointer}
+
+/* ---------- Table shell ---------- */
+.table{
+  position:fixed;inset:0;display:flex;flex-direction:column;
+  background:radial-gradient(120% 90% at 50% 38%, var(--felt-1) 0%, var(--felt-2) 46%, var(--felt-3) 78%, #05210f 100%);
+  border:8px solid transparent;
+  border-image:linear-gradient(160deg,#8a5a2b,#5a3717 30%,#3f2611 60%,#7a4d24) 1;
+  box-shadow:inset 0 0 120px rgba(0,0,0,.5), inset 0 0 0 2px rgba(255,209,102,.12);
+}
+.table::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(rgba(255,255,255,.04) 1px,transparent 1px),radial-gradient(rgba(0,0,0,.06) 1px,transparent 1px);
+  background-size:6px 6px,10px 10px;background-position:0 0,3px 3px;
+  mix-blend-mode:overlay;opacity:.5;
+}
+
+/* ---------- Top bar ---------- */
+.topbar{position:relative;z-index:6;display:flex;align-items:center;gap:10px;padding:8px 12px;background:linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,0))}
+.round-chip,.field-chip{
+  background:linear-gradient(180deg,#1d4a2c,#102a1a);border:1px solid var(--gold);border-radius:999px;
+  padding:5px 12px;font-size:13px;color:#e9c9a0;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.3);
+}
+.round-chip b,.field-chip strong{color:var(--gold);font-weight:800}
+.field-chip{max-width:58vw;overflow:hidden;text-overflow:ellipsis;display:flex;gap:6px;align-items:baseline}
+.field-chip .small{font-size:11px;color:#9fbfaa;overflow:hidden;text-overflow:ellipsis}
+.topbar-actions{margin-left:auto;display:flex;gap:8px}
+.icon-btn{background:linear-gradient(180deg,#1d4a2c,#0f2a18);border:1px solid var(--gold);color:#ffe9b0;border-radius:10px;padding:6px 12px;font-size:13px;font-weight:700}
+
+/* ---------- Start panel ---------- */
+.start-panel{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(circle at 50% 30%,rgba(10,40,24,.55),rgba(0,0,0,.86))}
+.start-card{
+  width:min(440px,94vw);background:linear-gradient(160deg,#2a1a12,#160d06);
+  border:2px solid var(--gold);border-radius:22px;padding:22px 20px calc(20px + env(safe-area-inset-bottom));
+  box-shadow:0 24px 70px rgba(0,0,0,.6),inset 0 0 0 1px rgba(255,209,102,.15);text-align:center;
+}
+.start-card .title{font-family:"ZCOOL KuaiLe","STKaiti","KaiTi",serif;font-size:36px;color:var(--gold);letter-spacing:3px;text-shadow:0 2px 0 #6e3d10,0 4px 12px rgba(0,0,0,.5);margin-bottom:2px}
+.start-card .subtitle{font-size:13px;color:#e9c9a0;margin-bottom:14px}
+.start-card .desc{font-size:13px;line-height:1.6;color:#d7e4dc;text-align:left;background:rgba(0,0,0,.28);border:1px solid #5a3717;border-radius:12px;padding:10px 12px;margin-bottom:14px}
+.skill-select{width:100%;border:1px solid var(--gold);border-radius:11px;padding:11px 12px;background:rgba(0,0,0,.35);color:var(--text);font:inherit;outline:none}
+.start-actions{display:grid;grid-template-columns:1fr;gap:9px;margin-top:12px}
+.start-actions .row2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+
+/* ---------- Game stage ---------- */
+.table-stage{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;min-height:0}
+.arena{position:relative;flex:1;min-height:0}
+.arena::before{content:"";position:absolute;top:50%;left:50%;width:380px;height:380px;transform:translate(-50%,-58%);border-radius:50%;background:radial-gradient(circle,rgba(255,209,102,.07),transparent 70%);pointer-events:none}
+
+/* seats */
+.players{position:absolute;inset:0;pointer-events:auto}
+.players .player{pointer-events:auto}
+.player{
+  position:absolute;width:132px;
+  background:rgba(6,28,16,.55);
+  border:0;border-radius:12px;padding:6px 8px 7px;
+  box-shadow:none;
+  transition:transform .18s,border-color .18s;
+}
+.player.active{animation:seatPulse 1.8s ease-in-out infinite}
+@keyframes seatPulse{0%,100%{box-shadow:0 0 0 2px rgba(255,209,102,.45),0 0 14px rgba(255,209,102,.2)}50%{box-shadow:0 0 0 2px rgba(255,209,102,.7),0 0 22px rgba(255,209,102,.4)}}
+.player.me{bottom:10px;left:12px}
+.player:nth-child(2){top:44px;left:8px}
+.player:nth-child(3){top:8px;left:50%;transform:translateX(-50%)}
+.player:nth-child(4){top:44px;right:8px}
+.avatar{display:flex;align-items:center;gap:7px;margin-bottom:4px;position:relative}
+.avatar .face{
+  width:50px;height:50px;border-radius:50%;flex:0 0 50px;
+  background-color:#9a6a1a;background-size:cover;background-position:center 28%;
+  box-shadow:0 0 0 2px rgba(255,209,102,.45);
+}
+.avatar .meta{min-width:0;flex:1}
+.avatar .name{font-weight:800;font-size:13px;color:#fff;line-height:1.1;text-shadow:0 1px 3px rgba(0,0,0,.5)}
+.avatar .skname{font-size:10.5px;color:var(--gold)}
+.count{
+  display:inline-flex;align-items:center;justify-content:center;gap:2px;
+  background:#1e6dc4;
+  color:#fff;font-size:16px;font-weight:900;font-family:"ZCOOL KuaiLe",serif;
+  border-radius:6px;padding:2px 8px;min-width:38px;
+  line-height:1;margin-bottom:3px;
+}
+.count .small{font-size:9px;opacity:.85;margin-left:1px}
+.energy{font-size:11px;color:var(--gold);margin-top:3px}
+.skill-row{margin-top:5px}
+.intel-row{margin-top:5px}
+.sk-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:#ffe9b0;background:rgba(0,0,0,.25);border:0;border-radius:999px;padding:3px 9px;cursor:pointer;user-select:none;white-space:nowrap}
+.sk-chip::after{content:"▸";color:var(--gold);font-size:11px}
+.player.exp-desc .sk-chip::after{content:"▾"}
+.intel-row .sk-chip{color:#dbe4f6}
+.intel-row .sk-chip::after{color:#a9c4ff}
+.sk-body{display:none;margin-top:5px;font-size:10.5px;color:#cfe6d8;line-height:1.5}
+.player.exp-desc .sk-body{display:block}
+.revealed{margin-top:4px;font-size:11px;color:#ffcab0}
+.intel-body{display:none;margin-top:5px;padding:6px;border-radius:8px;background:rgba(0,0,0,.25);border:0;font-size:10px;line-height:1.55;color:#dbe4f6}
+.player.exp-intel .intel-body{display:block}
+.known-title{font-weight:800;color:#a9c4ff;margin-bottom:2px}
+.intel-public{color:var(--gold);font-weight:850}
+.intel-private{color:#dbe4f6}
+.intel-legend{font-size:9px;color:#9aa5b8;margin-top:3px}
+
+/* ---------- Center stage ---------- */
+.center-stage{position:absolute;top:50%;left:50%;transform:translate(-50%,-58%);display:flex;flex-direction:column;align-items:center;gap:10px;width:min(420px,70%);pointer-events:none}
+.turn-ind{text-align:center;background:rgba(0,0,0,.3);border:1px solid rgba(255,209,102,.35);border-radius:14px;padding:6px 16px}
+.ti-label{font-size:11px;color:var(--muted);letter-spacing:2px}
+.ti-name{font-family:"ZCOOL KuaiLe",serif;font-size:22px;color:var(--gold);line-height:1.1}
+.ti-phase{font-size:12px;color:#e9c9a0}
+.last-play{min-height:84px;display:flex;flex-direction:column;justify-content:center;align-items:center}
+.lp-tag{font-size:12px;color:#e9c9a0;margin-bottom:4px}
+.lp-empty{font-size:12px;color:#9fbfaa;opacity:.7}
+.lp-cards{display:flex;justify-content:center;flex-wrap:wrap}
+.lp-card{width:42px;height:60px;border-radius:7px;background:var(--card);color:var(--black);border:1px solid #d9cfb4;box-shadow:0 3px 7px rgba(0,0,0,.35);display:flex;flex-direction:column;justify-content:space-between;padding:3px;margin-left:-18px;font-size:13px;font-weight:800}
+.lp-card:first-child{margin-left:0}
+.lp-card.red{color:var(--redcard)}
+
+/* ---------- Bottom zone ---------- */
+.bottom-zone{position:relative;z-index:5;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45));padding:4px 8px calc(8px + env(safe-area-inset-bottom))}
+.sel-text{text-align:center;font-size:12px;color:#cfe6d8;margin:2px 0 2px;min-height:16px}
+.sel-text b{color:var(--gold)}
+#hand{display:flex;justify-content:center;flex-wrap:nowrap;gap:0;overflow-x:auto;overflow-y:hidden;padding:26px 6px 14px;min-height:132px;scrollbar-width:thin}
+#hand .card{flex:0 0 auto;margin-left:-30px}
+#hand .card:first-child{margin-left:0}
+.card{
+  width:56px;height:80px;background:var(--card);border-radius:9px;color:var(--black);
+  border:2px solid #e2d8bf;box-shadow:0 3px 8px rgba(0,0,0,.4);
+  display:flex;flex-direction:column;justify-content:space-between;padding:5px;
+  user-select:none;-webkit-user-select:none;position:relative;
+}
+.card.red{color:var(--redcard)}
+.card.selected{border-color:var(--gold);transform:translateY(-20px);box-shadow:0 10px 18px rgba(0,0,0,.45)}
+.card.faceup{box-shadow:0 0 0 2px var(--gold) inset,0 3px 8px rgba(0,0,0,.4)}
+.card .rank{font-size:20px;font-weight:800;line-height:1}
+.card .suit{font-size:21px;align-self:flex-end}
+
+/* generic cards container (modals / pickers) */
+.cards{display:flex;gap:8px;overflow-x:auto;padding:8px 2px;min-height:94px;justify-content:center;flex-wrap:wrap}
+.cards .card{margin-left:0;flex:0 0 58px;height:82px}
+
+/* action bar */
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.btn{
+  border:0;border-radius:14px;padding:12px 22px;font-weight:800;font-size:15px;color:#fff;letter-spacing:1px;
+  box-shadow:0 4px 0 rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .08s,box-shadow .08s,opacity .15s;
+}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.25)}
+.btn:disabled{opacity:.4;filter:saturate(.5)}
+.btn-play{background:linear-gradient(180deg,var(--red),var(--red-d))}
+.btn-pass{background:linear-gradient(180deg,#5b6772,#363c45)}
+.btn-skill{background:linear-gradient(180deg,var(--gold),var(--gold-d));color:#3a1d00}
+.btn-sort{background:linear-gradient(180deg,#34a85e,#1c6e3a)}
+button.primary{background:linear-gradient(180deg,var(--red),var(--red-d));color:#fff}
+button.warn{background:linear-gradient(180deg,#7a3b3b,#4a2222)}
+button.good{background:linear-gradient(180deg,#2b8a4a,#16592f)}
+button{border:0;border-radius:12px;padding:10px 12px;background:#243a2c;color:var(--text);font-weight:650}
+button:disabled{opacity:.42}
+
+/* ---------- Log drawer ---------- */
+.log-drawer{position:fixed;top:0;bottom:0;right:0;width:min(340px,86vw);z-index:120;transform:translateX(100%);transition:transform .25s ease;display:flex;flex-direction:column;background:linear-gradient(160deg,rgba(8,30,18,.97),rgba(4,18,10,.97));border-left:2px solid var(--gold);box-shadow:-8px 0 30px rgba(0,0,0,.5)}
+.log-drawer.show{transform:translateX(0)}
+.log-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #2f6b45;font-weight:800;color:var(--gold)}
+.log-head button{background:#243a2c;border:1px solid #2f6b45;color:#fff;border-radius:8px;padding:2px 10px;font-size:16px;line-height:1}
+.log{flex:1;overflow:auto;padding:9px;font-size:12px;line-height:1.55;color:#cfe6d8}
+.log div{padding:2px 0;border-bottom:1px dashed #1c3a26}
+
+/* ---------- Modal / sheet ---------- */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);display:none;align-items:flex-end;justify-content:center;z-index:60}
+.modal.show{display:flex}
+.sheet{width:min(560px,100%);max-height:86vh;overflow:auto;background:linear-gradient(165deg,#1d4a2c,#0f2a18);border:1px solid var(--gold);border-radius:18px 18px 0 0;padding:16px 14px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.5)}
+.sheet h3{margin:0 0 10px;color:var(--gold);font-family:"ZCOOL KuaiLe",serif;font-size:22px}
+.choice{width:100%;text-align:left;margin:5px 0;background:#243a2c;border:1px solid #2f6b45;color:var(--text)}
+.peek{display:flex;gap:10px;margin:12px 0;justify-content:center}
+.peek .card{flex-basis:70px;height:98px;margin-left:0}
+.center{text-align:center}
+.small{font-size:12px;color:var(--muted)}
+.big{font-size:16px;font-weight:800;color:#ffe9b0}
+.ruleline{margin:4px 0;font-size:13px;line-height:1.6;color:#d7e4dc}
+.field strong{color:var(--gold)}
+
+/* ---------- Choice context: 选择时仍可查看自己的手牌和日志 ---------- */
+.choice-context{
+  position:sticky;top:-16px;z-index:3;
+  margin:-16px -14px 12px;padding:10px 12px 9px;
+  background:linear-gradient(180deg,rgba(15,42,24,.98),rgba(15,42,24,.92));
+  border-bottom:1px solid rgba(255,209,102,.24);
+  box-shadow:0 5px 14px rgba(0,0,0,.18);
+}
+.choice-context-tools{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.choice-context-btn{
+  border:1px solid var(--gold);border-radius:10px;padding:8px 10px;
+  background:linear-gradient(180deg,#1d4a2c,#102a1a);
+  color:#ffe9b0;font-size:12px;font-weight:800;
+}
+.choice-context-btn.active{background:linear-gradient(180deg,var(--gold),var(--gold-d));color:#3a1d00}
+.choice-hand-panel{
+  display:none;margin-top:9px;padding:8px;border-radius:11px;
+  border:1px solid #2f6b45;background:rgba(0,0,0,.24);
+}
+.choice-hand-panel.show{display:block}
+.choice-hand-title{font-size:11px;color:#bcd6c4;margin-bottom:6px}
+.choice-mini-hand{
+  display:flex;gap:3px;overflow-x:auto;padding:3px 1px 7px;scrollbar-width:thin;
+}
+.choice-mini-card{
+  flex:0 0 38px;height:54px;border-radius:6px;background:var(--card);
+  border:1px solid #d9cfb4;color:var(--black);
+  display:flex;flex-direction:column;justify-content:space-between;
+  padding:3px;font-size:12px;font-weight:800;box-shadow:0 2px 5px rgba(0,0,0,.28);
+}
+.choice-mini-card.red{color:var(--redcard)}
+.choice-mini-card .mini-suit{align-self:flex-end;font-size:14px}
+
+/* codex */
+.codex-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 12px}
+.codex-tab{background:#243a2c;border:1px solid #2f6b45;color:var(--text);border-radius:11px;padding:10px}
+.codex-tab.active{background:linear-gradient(180deg,var(--gold),var(--gold-d));color:#3a1d00;border-color:var(--gold)}
+.codex-list{display:grid;gap:9px}
+.codex-item{border:1px solid #2f6b45;background:rgba(0,0,0,.22);border-radius:13px;padding:11px 12px}
+.codex-item-title{font-weight:800;font-size:15px;margin-bottom:5px;color:#ffe9b0}
+.codex-item-desc{font-size:12px;color:#cfe6d8;line-height:1.55}
+.codex-tag{display:inline-block;margin-left:6px;padding:2px 7px;border-radius:999px;font-size:10px;background:#0a2a16;color:#bcd6c4;border:1px solid #2f6b45;vertical-align:1px}
+.codex-footer{position:sticky;bottom:0;background:linear-gradient(180deg,rgba(15,42,24,0),#0f2a18 35%);padding-top:18px}
+
+/* ---------- Event overlay ---------- */
+.event-overlay{position:fixed;inset:0;z-index:70;display:none;align-items:center;justify-content:center;padding:24px;background:rgba(2,10,5,.82);backdrop-filter:blur(7px)}
+.event-overlay.show{display:flex;animation:eventFadeIn .18s ease-out}
+.event-card{width:min(520px,92vw);border-radius:24px;padding:26px 22px;text-align:center;border:1px solid rgba(255,255,255,.14);box-shadow:0 24px 80px rgba(0,0,0,.6);transform:scale(.94);animation:eventPop .26s cubic-bezier(.2,.8,.2,1) forwards}
+.event-overlay.field .event-card{background:linear-gradient(145deg,#3a2c12,#1a1408);box-shadow:0 0 0 1px rgba(255,209,102,.27) inset,0 24px 80px rgba(0,0,0,.6)}
+.event-overlay.penalty .event-card{background:linear-gradient(145deg,#4a1f26,#1c0f12);box-shadow:0 0 0 1px rgba(255,123,123,.33) inset,0 24px 80px rgba(0,0,0,.6)}
+.event-overlay.skill .event-card{background:linear-gradient(145deg,#1b3a4d,#0c1620);box-shadow:0 0 0 1px rgba(255,209,102,.33) inset,0 24px 80px rgba(0,0,0,.6)}
+.event-kicker{font-size:12px;letter-spacing:.16em;font-weight:800;opacity:.8;color:#ffe9b0}
+.event-title{font-size:30px;font-weight:900;margin:8px 0 7px;font-family:"ZCOOL KuaiLe",serif}
+.event-desc{font-size:14px;line-height:1.55;color:#e9efe8}
+.event-overlay.field .event-title{color:var(--gold)}
+.event-overlay.penalty .event-title{color:#ff9b9b}
+.event-overlay.skill .event-title{color:var(--gold)}
+.event-countdown{font-size:11px;color:#aeb5c4;margin-top:13px}
+@keyframes eventFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes eventPop{from{transform:scale(.90);opacity:.25}to{transform:scale(1);opacity:1}}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#1a2a1f;border:1px solid var(--gold);padding:9px 14px;border-radius:999px;z-index:80;display:none;font-size:13px;color:#ffe9b0;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+
+.hidden{display:none!important}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.space{justify-content:space-between}
+
+@media (max-width:560px){
+  .player{width:116px}
+  .player .skill{display:none}
+  .btn{padding:10px 14px;font-size:13px}
+  .start-card .title{font-size:30px}
+}
+@media (max-width:380px){
+  .player{width:102px}
+  .avatar .face{width:42px;height:42px;flex:0 0 42px}
+  .avatar .name{font-size:11px}
+  .count{font-size:15px;padding:2px 7px;min-width:36px}
+}
+</style>
+</head>
+<body>
+<div class="table">
+  <div class="topbar">
+    <div class="round-chip">第 <b id="roundNo">1</b> 轮</div>
+    <div class="field-chip"><strong id="fieldName">无场地</strong><span class="small" id="fieldDesc">第5、10、15…轮结束时抽取新场地</span></div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="logToggleBtn">日志</button>
+      <button class="icon-btn" id="restartBtn">退出</button>
+    </div>
+  </div>
+
+  <div class="start-panel" id="startPanel">
+    <div class="start-card">
+      <div class="title">欢乐牌局</div>
+      <div class="subtitle">1人 vs 3AI · V0.22</div>
+      <div class="desc">4副标准扑克；每人2张起手。正常回合先摸牌，再出1张单牌或合法组合；也可以不出。一次打出4张及以上的合法牌型即可获得额外回合；额外回合默认不摸牌、默认不能继续触发额外回合。</div>
+      <div class="small" style="margin:4px 0 6px;color:#e9c9a0;text-align:left">选择你的技能</div>
+      <select id="skillSelect" class="skill-select"></select>
+      <div class="start-actions">
+        <button class="btn btn-play" id="startBtn">开始游戏</button>
+        <div class="row2">
+          <button class="btn btn-sort" id="rulesBtn">查看规则</button>
+          <button class="btn btn-skill" id="codexBtn">技能 / 场地图鉴</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="game" class="hidden table-stage">
+    <div class="arena">
+      <div class="players" id="players"></div>
+      <div class="center-stage">
+        <div class="turn-ind">
+          <div class="ti-label">当前行动</div>
+          <div class="ti-name" id="turnText">你</div>
+          <div class="ti-phase" id="phaseText">摸牌</div>
+        </div>
+        <div class="last-play" id="lastPlay"></div>
+      </div>
+    </div>
+
+    <div class="bottom-zone">
+      <div class="sel-text" id="selectionText">选择手牌后出牌。</div>
+      <div class="cards" id="hand"></div>
+      <div class="actions">
+        <button class="btn btn-play" id="playBtn">出牌</button>
+        <button class="btn btn-pass" id="passBtn">不出</button>
+        <button class="btn btn-skill" id="skillBtn">技能</button>
+        <button class="btn btn-sort" id="sortBtn">整理</button>
+      </div>
+    </div>
+
+    <div class="log-drawer" id="logDrawer">
+      <div class="log-head"><span>对局日志</span><button id="logCloseBtn">×</button></div>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+
+<div class="event-overlay" id="eventOverlay">
+  <div class="event-card">
+    <div class="event-kicker" id="eventKicker">事件</div>
+    <div class="event-title" id="eventTitle">提示</div>
+    <div class="event-desc" id="eventDesc"></div>
+    <div class="event-countdown">稍后自动继续</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+"use strict";
+
+const SUITS = ["♠","♥","♣","♦"];
+const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+const RANK_VALUE = Object.fromEntries(RANKS.map((r,i)=>[r,i+1]));
+
+const SKILLS = [
+  {
+    id:"overload", name:"过载",
+    desc:"每次正常摸牌额外摸1张；效果摸牌不受影响。你的额外回合仍可由4张及以上牌型继续触发。"
+  },
+  {
+    id:"dice", name:"骰命",
+    desc:"每个自己的正常回合开始时公开投掷1D6，并强制结算对应效果：1→自己摸1；2→选择2（查看牌堆顶2张，选1张加入手牌，另一张洗回牌堆）；3→指定任意玩家摸1，若指定自己则改为选择2；4→指定两名不同玩家各摸1，若其中包含自己，则自己那一份改为选择2；5→先弃2张；若因此清空手牌则立即获胜，否则再选择3（查看牌堆顶3张，选2张加入手牌，未选牌洗回牌堆）；6→本正常回合结束后获得1个额外回合。骰命产生的进张均属于效果摸牌，不触发占卜。"
+  },
+  {
+    id:"trap", name:"截胡",
+    desc:"场上有其他玩家手牌>4后进入待触发；之后第一个获得额外回合的其他玩家先摸2张。截胡不会被自己的额外回合触发。处罚结算时，截胡本人可分别选择：是否摸1张、是否弃1张。随后进入5个场上回合冷却，再重新检测是否满足待触发条件。"
+  },
+  {
+    id:"resonance", name:"共振",
+    desc:"其他玩家每获得1个额外回合时，你必须摸1张。你每获得1个额外回合时，其他所有玩家各摸1张，随后你可以弃1张手牌。每个额外回合分别结算一次。"
+  },
+  {
+    id:"divine", name:"占卜",
+    desc:"仅在正常摸牌阶段触发：第一张正常摸牌改为“占卜4”，查看牌堆顶4张并选择1张加入手牌；剩余牌保持原有相对顺序，不能调整顺序，但至多可将其中1张置于牌底。额外回合没有摸牌阶段，因此不会触发占卜；处罚、技能等效果摸牌也不会触发占卜。每个自己的正常回合结束时，秘密查看其他每名玩家随机1张暗牌；情报持续保留到对应实体牌离手。所有已公开/明牌也自动加入占卜情报区并以金色显示。"
+  },
+  {
+    id:"reveal", name:"明牌",
+    desc:"每个自己的正常回合限一次：出牌阶段可公开手中1张未公开牌，指定任意玩家（含自己）摸1张。公开牌保持明置直到离手。"
+  },
+  {
+    id:"charge", name:"充能",
+    desc:"每次获得1张牌时都立即判断：若获得前手牌中已存在同点数牌，则+1能量；无论该牌来自正常摸牌、场地、处罚、其他玩家技能或自己的技能都适用，并按获得顺序逐张结算。2点：正常摸牌时可额外摸1；4点：额外回合可继续触发；6点：可出对子；8点：立即获得额外回合，该额外回合结束后-4能量。"
+  },
+  {
+    id:"artisan", name:"牌匠",
+    desc:"正常摸牌时可将刚摸到的牌置底并重摸1次。三带一→指定1人摸1；葫芦→指定2人各摸1；顺子→其他人各摸1；连对→额外再获1个额外回合；四条→指定1人下个正常回合跳过出牌阶段。"
+  }
+];
+
+const FIELDS = [
+  {id:"drawplus", name:"丰收", dur:2, desc:"接下来2轮，所有玩家正常摸牌数+1。"},
+  {id:"nosingle", name:"封口", dur:2, desc:"接下来2轮，所有玩家禁止出单牌。"},
+  {id:"odd", name:"奇数通行", dur:2, desc:"接下来2轮，单牌只能打A/3/5/7/9/J/K。"},
+  {id:"even", name:"偶数通行", dur:2, desc:"接下来2轮，单牌只能打2/4/6/8/10/Q。"},
+  {id:"chain", name:"连锁失控", dur:3, desc:"接下来3轮，所有玩家的额外回合也可由4张及以上牌型继续触发。"},
+  {id:"discard", name:"强制清仓", dur:2, desc:"接下来2轮，每个正常回合结束必须弃1张；若弃牌前仅剩1张，弃后立即摸1张。弃牌不能直接获胜。"},
+  {id:"diceDraw", name:"骰子风暴", dur:2, desc:"接下来2轮，每个正常回合开始掷1D6，本回合基础摸牌数改为骰子点数。"},
+  {id:"overtime", name:"加时赛", dur:1, desc:"接下来1轮，每名玩家结束自己的正常回合后，在该正常回合已产生的其他额外回合全部结算完毕后，再获得1个额外回合。本场地不改变额外回合的连锁规则：额外回合默认不能再由4张以上牌型触发新的额外回合；若玩家技能本身允许额外回合连锁，则这些额外回合均可正常连锁。"}
+];
+
+let G = null;
+let selected = new Set();
+let aiTimer = null;
+const AVATARS=["data:image/jpeg;base64,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","data:image/jpeg;base64,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","data:image/jpeg;base64,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","data:image/jpeg;base64,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"];
+const expDesc=new Set(), expIntel=new Set();
+
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const rand = n => Math.floor(Math.random()*n);
+const rollD6 = () => 1+rand(6);
+
+const AI_THINK_MS = 2000;
+const aiThink = () => sleep(AI_THINK_MS);
+
+function makeDeck(){
+  const d=[]; let uid=0;
+  for(let k=0;k<4;k++){
+    for(const s of SUITS) for(const r of RANKS) d.push({id:"c"+(uid++),rank:r,suit:s,revealed:false});
+  }
+  shuffle(d); return d;
+}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rand(i+1);[a[i],a[j]]=[a[j],a[i]]}return a}
+function drawRaw(){
+  if(!G.deck.length){
+    // prototype fallback: recycle a fresh deck if somehow exhausted
+    G.deck = makeDeck();
+    log("牌堆耗尽，测试版重新生成牌堆。");
+  }
+  return G.deck.shift();
+}
+function putBottom(card){ G.deck.push(card); }
+
+function gainCardToHand(p, c, source="effect"){
+  // 所有“获得牌”统一从这里结算。
+  // 【充能】不区分来源：正常摸牌、场地、处罚、他人技能、自己技能都逐张判断。
+  const hadSame = p.hand.some(x=>x.rank===c.rank);
+  p.hand.push(c);
+
+  if(p.skill.id==="charge" && hadSame){
+    p.energy++;
+    const sourceText = source==="normal" ? "正常摸牌"
+      : source==="field" ? "场地效果"
+      : source==="penalty" ? "处罚效果"
+      : source==="skill" ? "技能效果"
+      : source==="setup" ? "起手"
+      : "获得牌";
+    log(`${p.name} 因${sourceText}获得重复点数 ${c.rank}，充能 +1（${p.energy}）。`);
+  }
+
+  checkChargeBurst(p);
+}
+
+function drawTo(p, n, source="effect"){
+  for(let i=0;i<n;i++){
+    const c=drawRaw();
+    gainCardToHand(p,c,source);
+  }
+}
+
+function checkChargeBurst(p){
+  if(p.skill.id==="charge" && p.energy>=8 && !p.chargeBurstQueued){
+    p.chargeBurstQueued=true;
+    p.extraTurns += 1;
+    p.chargeBurstExtraPending += 1;
+    log(`${p.name} 充能达到8：立即获得1个额外回合。`);
+  }
+}
+
+function newGame(){
+  clearTimeout(aiTimer);
+  const deck=makeDeck();
+  const selectedSkillId = $("skillSelect").value || "random";
+  let humanSkill;
+  if(selectedSkillId==="random") humanSkill=[...SKILLS][rand(SKILLS.length)];
+  else humanSkill=SKILLS.find(x=>x.id===selectedSkillId) || SKILLS[0];
+  const aiPool=shuffle(SKILLS.filter(x=>x.id!==humanSkill.id));
+  const skills=[humanSkill,...aiPool.slice(0,3)];
+  const names=["你","AI·甲","AI·乙","AI·丙"];
+  G={
+    deck, players:names.map((name,i)=>({
+      name,isAI:i!==0,hand:[],skill:skills[i],energy:0,diceValue:null,ownNormalTurns:0,
+      extraTurns:0,skipPlay:false,revealUsed:false,chargeBurstQueued:false,chargeBurstExtraPending:0,
+      diceExtraPending:false,fieldExtraPending:false,knownInfo:{}
+    })),
+    current:0, round:1, normalSeat:0, phase:"idle", field:null, fieldRoundsLeft:0,
+    gameOver:false, trapStates:{}, turnSerial:0, extraMode:false, fieldHistory:[],lastPlay:null
+  };
+  for(const p of G.players) drawTo(p,2,"setup");
+  for(const p of G.players){
+    if(p.skill.id==="trap"){
+      G.trapStates[p.name]={armed:false,cooldown:0,everActivated:false};
+    }
+  }
+  selected.clear();
+  $("startPanel").classList.add("hidden");
+  $("game").classList.remove("hidden");
+  logClear();
+  log("游戏开始。每人起手2张。");
+  updateTrapArming();
+  render();
+  startTurn(false);
+}
+
+function ensureLogDrawerPortal(){
+  const drawer=$("logDrawer");
+  if(drawer && drawer.parentElement!==document.body){
+    document.body.appendChild(drawer);
+  }
+}
+
+function logClear(){$("log").innerHTML=""}
+function log(t){
+  const e=document.createElement("div"); e.textContent=t; $("log").appendChild(e);
+  $("log").scrollTop=$("log").scrollHeight;
+}
+function toast(t){
+  $("toast").textContent=t; $("toast").style.display="block";
+  setTimeout(()=>$("toast").style.display="none",1500);
+}
+
+let eventOverlayBusy = false;
+function showEventOverlay(kind, kicker, title, desc, duration=1250){
+  return new Promise(resolve=>{
+    const o=$("eventOverlay");
+    eventOverlayBusy=true;
+    o.className=`event-overlay ${kind} show`;
+    $("eventKicker").textContent=kicker;
+    $("eventTitle").textContent=title;
+    $("eventDesc").textContent=desc || "";
+    const done=()=>{
+      if(!eventOverlayBusy)return;
+      eventOverlayBusy=false;
+      o.className="event-overlay";
+      o.onclick=null;
+      resolve();
+    };
+    const timer=setTimeout(done,duration);
+    o.onclick=()=>{ clearTimeout(timer); done(); };
+  });
+}
+
+function currentPlayer(){ return G.players[G.current]; }
+
+function fieldActive(id){ return G.field && G.field.id===id && G.fieldRoundsLeft>0; }
+
+async function startTurn(extra){
+  if(G.gameOver)return;
+  selected.clear();
+  G.extraMode=!!extra;
+  const p=currentPlayer();
+
+  if(extra){
+    G.phase="play";
+    log(`↪ ${p.name} 进入额外回合（不摸牌）。`);
+    render();
+    if(p.isAI) scheduleAI();
+    return;
+  }
+
+  // 【明牌】规则是“每个自己的正常回合限一次”，额外回合不会刷新次数。
+  p.revealUsed=false;
+  p.ownNormalTurns++;
+  G.turnSerial++;
+  tickTrapCooldowns();
+
+  G.phase="draw";
+  render();
+
+  // 新版【骰命】：每个自己的正常回合开始时公开投1D6。
+  if(p.skill.id==="dice"){
+    if(p.isAI) await aiThink();
+    await resolveDiceFateTurnStart(p);
+    if(G.gameOver)return;
+  }
+
+  let base=1;
+  if(fieldActive("diceDraw")){
+    const d=rollD6(); base=d;
+    log(`${p.name} 受到【骰子风暴】：掷出 ${d}，基础摸牌=${d}。`);
+  }else if(fieldActive("drawplus")){
+    base=2;
+  }
+
+  let extraDraw=0;
+  if(p.skill.id==="overload") extraDraw+=1;
+
+  // 充能2：人类可选，AI简单决策
+  if(p.skill.id==="charge" && p.energy>=2){
+    let take=false;
+    if(p.isAI){
+      await aiThink();
+      take = aiShouldExtraDraw(p);
+    }
+    else take = await askYesNo("充能 · 额外摸牌", `当前充能 ${p.energy}。是否在本次正常摸牌额外摸1张？`);
+    if(take){extraDraw++;log(`${p.name} 使用2点阈值能力：本回合额外摸1张。`)}
+  }
+
+  const totalNormalDraw = base+extraDraw;
+  const beforeIds=new Set(p.hand.map(c=>c.id));
+
+  // 占卜：只替代本次正常摸牌阶段的“第一张”
+  if(p.skill.id==="divine" && !G.extraMode){
+    if(p.isAI) await aiDivinationDraw(p);
+    else await humanDivinationDraw(p);
+    if(totalNormalDraw>1) drawTo(p,totalNormalDraw-1,"normal");
+  }else{
+    drawTo(p,totalNormalDraw,"normal");
+  }
+
+  const justDrawn=p.hand.filter(c=>!beforeIds.has(c.id));
+  log(`${p.name} 正常摸牌 ${totalNormalDraw} 张。`);
+  updateTrapArming();
+
+  // 牌匠只处理“最后摸到的一张”，避免骰子风暴时过度复杂
+  if(p.skill.id==="artisan" && justDrawn.length){
+    const last=justDrawn[justDrawn.length-1];
+    let replace=false;
+    if(p.isAI){
+      await aiThink();
+      replace=aiArtisanReplace(p,last);
+    }
+    else replace=await askYesNo("牌匠 · 换牌", `刚摸到 ${last.rank}${last.suit}。是否将它置于牌底并重摸1张？`);
+    if(replace){
+      const idx=p.hand.findIndex(c=>c.id===last.id);
+      if(idx>=0){p.hand.splice(idx,1);putBottom(last);drawTo(p,1,"skill");log(`${p.name} 将 ${last.rank}${last.suit} 置底并重摸1张。`)}
+    }
+  }
+
+  if(p.skipPlay){
+    p.skipPlay=false;
+    log(`${p.name} 本回合被【四条】效果跳过出牌阶段。`);
+    await finishTurn();
+    return;
+  }
+
+  G.phase="play";
+  render();
+  if(p.isAI) scheduleAI();
+}
+
+function scheduleAI(){
+  clearTimeout(aiTimer);
+  aiTimer=setTimeout(()=>{
+    aiTimer=null;
+    aiAct();
+  },AI_THINK_MS);
+}
+
+async function aiAct(){
+  if(!G || G.gameOver)return;
+  const p=currentPlayer();
+  if(!p || !p.isAI || G.phase!=="play")return;
+
+  try{
+    // 主动明牌：每个“正常回合”最多一次；额外回合不会刷新。
+    if(p.skill.id==="reveal" && !p.revealUsed){
+      const unrevealed=p.hand.filter(c=>!c.revealed);
+      if(unrevealed.length && (p.hand.length>=5 || Math.random()<0.45)){
+        const c=chooseLeastUsefulCard(p,unrevealed);
+        if(c){
+          // 明牌后仍保留在占卜者的情报区，只把显示状态改成“公开（金色）”。
+          c.revealed=true;
+          p.revealUsed=true;
+
+          const t=aiChooseDrawTarget(p,true);
+          drawTo(G.players[t],1,"skill");
+          log(`${p.name} 公开 ${c.rank}${c.suit}，令 ${G.players[t].name} 摸1张。`);
+          updateTrapArming();
+          render();
+
+          await showEventOverlay(
+            "skill",
+            "技能发动",
+            "【明牌】",
+            `${p.name} 公开 ${c.rank}${c.suit}，并令 ${G.players[t].name} 额外摸1张。`,
+            900
+          );
+
+          // AI用了主动技能后，再停约2秒，模拟重新评估手牌再出牌。
+          await aiThink();
+        }
+      }
+    }
+
+    const cand=aiBestPlay(p);
+    if(cand){
+      await executePlay(p,cand.cards,cand.type);
+    }else{
+      log(`${p.name} 选择不出。`);
+      await finishTurn();
+    }
+  }catch(err){
+    console.error("AI action error:",err);
+    log(`⚠ ${p.name} 的AI逻辑发生异常，系统已自动跳过本次出牌以避免卡死。`);
+    // 防止因为单个AI技能异常把整局锁死。
+    try{
+      if(G && !G.gameOver && currentPlayer()===p){
+        await finishTurn();
+      }
+    }catch(recoverErr){
+      console.error("AI recovery error:",recoverErr);
+      log("⚠ 自动恢复失败，请返回开始界面重新开局。");
+    }
+  }
+}
+
+
+const DICE_FATE_TEXT = {
+  1:"强制：自己摸1张。",
+  2:"强制【选择2】：查看牌堆顶2张，选1张加入手牌，另一张洗回牌堆。",
+  3:"强制：指定任意玩家摸1张；若指定自己，则改为【选择2】。",
+  4:"强制：指定两名不同玩家各摸1张；若其中包含自己，自己的那一份改为【选择2】。",
+  5:"强制：先弃2张，再【选择3】：查看牌堆顶3张，选2张加入手牌，未选牌洗回牌堆。",
+  6:"强制：本正常回合结束后获得1个额外回合。"
+};
+
+
+
+function shuffleCardIntoDeck(card){
+  // “洗入牌堆”：随机插入剩余牌堆任意位置，而不是置于牌底。
+  card.revealed=false;
+  const pos=rand(G.deck.length+1);
+  G.deck.splice(pos,0,card);
+}
+
+function addEffectCardToHand(p,card,label="效果摸牌"){
+  // 特殊选择进张同样属于“获得牌”，统一走【充能】判定。
+  gainCardToHand(p,card,"skill");
+}
+
+function aiPickBestFromCards(p,cards,count){
+  return [...cards]
+    .sort((a,b)=>{
+      const sa=cardNeedScore(p,a)+p.hand.filter(x=>x.rank===a.rank).length*3;
+      const sb=cardNeedScore(p,b)+p.hand.filter(x=>x.rank===b.rank).length*3;
+      return sb-sa;
+    })
+    .slice(0,count);
+}
+
+async function diceChooseTop(p,lookCount,takeCount,title){
+  const top=G.deck.splice(0,lookCount);
+  if(top.length<lookCount){
+    // 测试版极端牌堆不足时补足新牌堆，避免流程卡死。
+    while(top.length<lookCount) top.push(drawRaw());
+  }
+
+  let chosen=[];
+  if(p.isAI){
+    chosen=aiPickBestFromCards(p,top,takeCount);
+  }else{
+    chosen=await chooseMultipleCardsFromList(title,top,takeCount);
+  }
+
+  const chosenIds=new Set(chosen.map(c=>c.id));
+  for(const c of chosen){
+    addEffectCardToHand(p,c,title);
+  }
+
+  for(const c of top){
+    if(!chosenIds.has(c.id)) shuffleCardIntoDeck(c);
+  }
+
+  log(`${p.name} 完成【${title}】：从牌堆顶${lookCount}张中获得${takeCount}张，未选择牌洗回牌堆。`);
+  updateTrapArming();
+  render();
+}
+
+async function discardExactForDice(p,count){
+  const actual=Math.min(count,p.hand.length);
+  if(actual<=0)return [];
+
+  let cards=[];
+  if(p.isAI){
+    const pool=[...p.hand];
+    for(let i=0;i<actual;i++){
+      const c=chooseLeastUsefulCard({...p, hand:pool},pool);
+      if(!c)break;
+      cards.push(c);
+      pool.splice(pool.findIndex(x=>x.id===c.id),1);
+    }
+  }else{
+    cards=await chooseMultipleCardsFromList(
+      `骰命·5：必须弃${count}张牌${p.hand.length<count?"（当前不足2张，将弃尽现有手牌）":""}`,
+      p.hand,
+      actual
+    );
+  }
+
+  const idx=G.players.indexOf(p);
+  const ids=new Set(cards.map(c=>c.id));
+  for(const c of cards) removeKnownFaceFromAllObservers(idx,c);
+  p.hand=p.hand.filter(c=>!ids.has(c.id));
+
+  if(cards.length){
+    log(`${p.name} 因【骰命·5】弃掉 ${cards.map(c=>c.rank+c.suit).join(" ")}。`);
+  }
+  return cards;
+}
+
+function aiChooseTwoDrawTargets(p){
+  const selfIndex=G.players.indexOf(p);
+  const pool=G.players.map((x,i)=>({x,i}));
+
+  // 自己手牌很少时，允许把其中一个名额给自己补资源。
+  const picks=[];
+  if(p.hand.length<=3 && Math.random()<0.55) picks.push(selfIndex);
+
+  const others=pool
+    .filter(o=>!picks.includes(o.i))
+    .sort((a,b)=>a.x.hand.length-b.x.hand.length);
+
+  while(picks.length<2 && others.length){
+    picks.push(others.shift().i);
+  }
+  return picks.slice(0,2);
+}
+
+async function resolveDiceFateTurnStart(p){
+  if(p.skill.id!=="dice" || G.extraMode)return;
+
+  p.diceExtraPending=false;
+  const d=rollD6();
+  p.diceValue=d;
+
+  render();
+  await showEventOverlay(
+    "skill",
+    "骰命 · 公开掷骰",
+    `🎲 ${d} 点`,
+    DICE_FATE_TEXT[d],
+    950
+  );
+
+  if(d===1){
+    drawTo(p,1,"skill");
+    log(`${p.name} 强制结算【骰命·1】：自己摸1张。`);
+  }
+
+  else if(d===2){
+    await diceChooseTop(p,2,1,"骰命·选择2");
+  }
+
+  else if(d===3){
+    const selfIndex=G.players.indexOf(p);
+    const t=p.isAI
+      ? aiChooseDrawTarget(p,true)
+      : await chooseTarget("骰命·3：必须指定一名玩家",true);
+
+    if(t===selfIndex){
+      await diceChooseTop(p,2,1,"骰命·选择2");
+      log(`${p.name} 的【骰命·3】指定自己，因此改为【选择2】。`);
+    }else{
+      drawTo(G.players[t],1,"skill");
+      log(`${p.name} 强制结算【骰命·3】：${G.players[t].name} 摸1张。`);
+    }
+  }
+
+  else if(d===4){
+    const selfIndex=G.players.indexOf(p);
+    const ts=p.isAI
+      ? aiChooseTwoDrawTargets(p)
+      : await chooseTwoTargets("骰命·4：必须指定两名不同玩家");
+
+    // 非自己目标正常各摸1；自己目标则只结算一次【选择2】。
+    for(const t of ts){
+      if(t!==selfIndex){
+        drawTo(G.players[t],1,"skill");
+        log(`${p.name} 的【骰命·4】：${G.players[t].name} 摸1张。`);
+      }
+    }
+    if(ts.includes(selfIndex)){
+      await diceChooseTop(p,2,1,"骰命·选择2");
+      log(`${p.name} 的【骰命·4】包含自己，因此自己的那一份改为【选择2】。`);
+    }
+  }
+
+  else if(d===5){
+    // 强制弃2。若弃牌后手牌变为0，则立即获胜，后续【选择3】不再结算。
+    await discardExactForDice(p,2);
+
+    if(p.hand.length===0){
+      log(`${p.name} 因【骰命·5】弃尽手牌，立即获胜；不再结算后续【选择3】。`);
+      win(p);
+      return;
+    }
+
+    await diceChooseTop(p,3,2,"骰命·选择3");
+    log(`${p.name} 强制结算【骰命·5】：先弃2张，再从牌堆顶3张中选择2张。`);
+  }
+
+  else if(d===6){
+    p.diceExtraPending=true;
+    log(`${p.name} 强制结算【骰命·6】：本正常回合结束后获得1个额外回合。`);
+  }
+
+  updateTrapArming();
+  render();
+}
+function aiShouldExtraDraw(p){
+  if(p.hand.length<=5)return true;
+  const counts=rankCounts(p.hand);
+  return Object.values(counts).some(n=>n>=2) || p.hand.length<9;
+}
+
+function aiArtisanReplace(p,card){
+  const cnt=p.hand.filter(c=>c.rank===card.rank).length;
+  if(cnt>=2)return false;
+  const vals=p.hand.map(c=>RANK_VALUE[c.rank]);
+  const v=RANK_VALUE[card.rank];
+  const near=vals.some(x=>x!==v && Math.abs(x-v)<=1);
+  return !near && p.hand.length>=4;
+}
+
+async function aiDivinationDraw(p){
+  // 占卜只替代“正常摸牌阶段的第一张”；额外回合/效果摸牌绝不触发。
+  if(G.extraMode)return;
+  if(G.deck.length<4)return;
+  await aiThink();
+  const top=G.deck.splice(0,4);
+  let best=0,bestScore=-1e9;
+  top.forEach((c,i)=>{
+    const sc=cardNeedScore(p,c) + p.hand.filter(x=>x.rank===c.rank).length*3;
+    if(sc>bestScore){bestScore=sc;best=i}
+  });
+  const chosen=top.splice(best,1)[0];
+  gainCardToHand(p,chosen,"normal");
+
+  // AI最多沉1张：优先沉掉最可能帮助下一位已知牌型的牌
+  const next=(G.current+1)%G.players.length;
+  const knownCards=knownCardsFor(p,next);
+  let sinkIndex=-1, sinkScore=0;
+  top.forEach((c,i)=>{
+    const sameKnown=knownCards.filter(x=>faceKey(x)===faceKey(c)).length;
+    const sameRankKnown=knownCards.filter(x=>x.rank===c.rank).length;
+    const sc=sameKnown*6+sameRankKnown*2;
+    if(sc>sinkScore){sinkScore=sc;sinkIndex=i}
+  });
+  if(sinkIndex>=0){
+    const sunk=top.splice(sinkIndex,1)[0];
+    putBottom(sunk);
+  }
+
+  // 削弱版【占卜】：剩余牌不能调整顺序，只能保持原有相对顺序。
+  G.deck.unshift(...top);
+
+  log(`${p.name} 使用【占卜4】选择1张；剩余牌保持原顺序${sinkIndex>=0?"，并将其中1张置底":""}。`);
+}
+
+
+async function humanDivinationDraw(p){
+  // 占卜只替代“正常摸牌阶段的第一张”；额外回合/效果摸牌绝不触发。
+  if(G.extraMode)return;
+  if(G.deck.length<4)return;
+  const top=G.deck.splice(0,4);
+
+  const chosenId=await chooseCardFromList("占卜4 · 选择1张加入手牌",top);
+  const chosenIndex=top.findIndex(c=>c.id===chosenId);
+  const chosen=top.splice(chosenIndex>=0?chosenIndex:0,1)[0];
+  gainCardToHand(p,chosen,"normal");
+
+  let remaining=[...top];
+  const sinkId=await chooseCardOrNone(
+    "占卜4 · 至多沉底1张",
+    remaining,
+    "不沉底（剩余牌保持原顺序）"
+  );
+  if(sinkId){
+    const idx=remaining.findIndex(c=>c.id===sinkId);
+    if(idx>=0){
+      const sunk=remaining.splice(idx,1)[0];
+      putBottom(sunk);
+    }
+  }
+
+  // 不能调整顺序；拿走/沉底后，剩余牌按它们原本在牌堆中的相对顺序返回牌顶。
+  G.deck.unshift(...remaining);
+  log(`你使用【占卜4】拿走1张；剩余牌保持原顺序${sinkId?"，并将其中1张置底":""}。`);
+}
+
+function faceKey(c){ return `${c.rank}|${c.suit}`; }
+function faceTextKey(k){ const [r,s]=k.split("|"); return `${r}${s}`; }
+
+function recordDivinationIntel(observer,targetIndex,card){
+  // 记录“具体哪一张实体牌”，避免四副扑克出现同花同点数时重复/误删。
+  observer.knownInfo[targetIndex] ??= [];
+  if(!observer.knownInfo[targetIndex].includes(card.id)){
+    observer.knownInfo[targetIndex].push(card.id);
+  }
+}
+
+function removeKnownFaceFromAllObservers(targetIndex,card){
+  // 牌真正离开手牌时，所有占卜者关于这张实体牌的情报才失效。
+  for(const obs of G.players){
+    const arr=obs.knownInfo?.[targetIndex];
+    if(!arr || !arr.length)continue;
+    const idx=arr.indexOf(card.id);
+    if(idx>=0)arr.splice(idx,1);
+  }
+}
+
+function knownCardsFor(observer,targetIndex){
+  const ids=observer.knownInfo?.[targetIndex] || [];
+  const target=G.players[targetIndex];
+  return ids.map(id=>target.hand.find(c=>c.id===id)).filter(Boolean);
+}
+
+async function resolveDivinationIntel(p){
+  if(p.skill.id!=="divine")return;
+  const observerIndex=G.players.indexOf(p);
+  const seen=[];
+  for(let i=0;i<G.players.length;i++){
+    if(i===observerIndex)continue;
+    const target=G.players[i];
+    const hidden=target.hand.filter(c=>!c.revealed);
+    if(!hidden.length){
+      seen.push(`${target.name}：无可窥视暗牌`);
+      continue;
+    }
+    const c=hidden[rand(hidden.length)];
+    recordDivinationIntel(p,i,c);
+    seen.push(`${target.name}：${c.rank}${c.suit}`);
+  }
+  log(`${p.name} 在回合结束时获得了一轮信息。`);
+  if(!p.isAI){
+    render();
+    await showEventOverlay("skill","私人情报","【占卜】",seen.join("　｜　"),1800);
+  }
+}
+
+
+
+function cardNeedScore(p,c){
+  // 简单评估一张牌对当前手牌的“做牌价值”：
+  // 同点数越多越有价值，相邻点数也略微加分，供AI占卜/换牌等决策使用。
+  let score=0;
+  const same=p.hand.filter(x=>x.rank===c.rank).length;
+  score += same*4;
+
+  const v=RANK_VALUE[c.rank];
+  for(const x of p.hand){
+    const xv=RANK_VALUE[x.rank];
+    if(Math.abs(xv-v)===1) score += 1;
+    // A既可作1，也可在10JQKA里作高位，给一点额外顺子兼容性
+    if((v===1 && xv===13) || (v===13 && xv===1)) score += 0.5;
+  }
+  return score;
+}
+
+function rankCounts(cards){
+  const m={}; for(const c of cards)m[c.rank]=(m[c.rank]||0)+1; return m;
+}
+
+function classify(cards,p){
+  const n=cards.length;
+  if(n===0)return {ok:false,msg:"请先选择手牌。"};
+  if(n===1){
+    if(fieldActive("nosingle"))return {ok:false,msg:"当前场地禁止出单牌。"};
+    const v=RANK_VALUE[cards[0].rank];
+    if(fieldActive("odd") && v%2===0)return {ok:false,msg:"当前场地单牌只能打单数。"};
+    if(fieldActive("even") && v%2===1)return {ok:false,msg:"当前场地单牌只能打双数。"};
+    return {ok:true,type:"single",name:"单牌"};
+  }
+  if(n===2 && p.skill.id==="charge" && p.energy>=6 && cards[0].rank===cards[1].rank){
+    return {ok:true,type:"pair",name:"对子"};
+  }
+  const cnt=rankCounts(cards);
+  const vals=Object.values(cnt).sort((a,b)=>b-a);
+  if(n===4 && vals[0]===4)return {ok:true,type:"four",name:"四条"};
+  if(n===4 && vals[0]===3 && vals[1]===1)return {ok:true,type:"triple1",name:"三带一"};
+  if(n===5 && vals[0]===3 && vals[1]===2)return {ok:true,type:"fullhouse",name:"葫芦"};
+  if(n>=5 && isStraight(cards))return {ok:true,type:"straight",name:"顺子"};
+  if(n>=6 && n%2===0 && isPairRun(cards))return {ok:true,type:"pairrun",name:"连对"};
+  return {ok:false,msg:"这组牌不是当前允许的牌型。"};
+}
+
+function isStraight(cards){
+  const uniq=[...new Set(cards.map(c=>RANK_VALUE[c.rank]))].sort((a,b)=>a-b);
+  if(uniq.length!==cards.length)return false;
+  const consecutive = arr => arr.every((v,i)=>i===0 || v===arr[i-1]+1);
+  if(consecutive(uniq))return true;
+  // A作14用于10JQKA
+  const high=uniq.map(v=>v===1?14:v).sort((a,b)=>a-b);
+  return consecutive(high);
+}
+function isPairRun(cards){
+  const cnt=rankCounts(cards);
+  if(!Object.values(cnt).every(x=>x===2))return false;
+  const vals=Object.keys(cnt).map(r=>RANK_VALUE[r]).sort((a,b)=>a-b);
+  const consecutive=arr=>arr.every((v,i)=>i===0||v===arr[i-1]+1);
+  if(consecutive(vals))return true;
+  const high=vals.map(v=>v===1?14:v).sort((a,b)=>a-b);
+  return consecutive(high);
+}
+
+function enumerateCandidates(p){
+  const hand=p.hand, out=[];
+  // single
+  for(const c of hand){
+    const cl=classify([c],p); if(cl.ok)out.push({cards:[c],type:cl.type,name:cl.name});
+  }
+  // pair if allowed
+  if(p.skill.id==="charge" && p.energy>=6){
+    const by=groupByRank(hand);
+    for(const arr of Object.values(by)) if(arr.length>=2) out.push({cards:arr.slice(0,2),type:"pair",name:"对子"});
+  }
+  const by=groupByRank(hand);
+  const ranks=Object.keys(by);
+
+  // four / triple1
+  for(const r of ranks){
+    if(by[r].length>=4) out.push({cards:by[r].slice(0,4),type:"four",name:"四条"});
+    if(by[r].length>=3){
+      const kicker=hand.find(c=>c.rank!==r);
+      if(kicker) out.push({cards:[...by[r].slice(0,3),kicker],type:"triple1",name:"三带一"});
+    }
+  }
+  // full house
+  for(const r3 of ranks){
+    if(by[r3].length<3)continue;
+    for(const r2 of ranks){
+      if(r2!==r3 && by[r2].length>=2) out.push({cards:[...by[r3].slice(0,3),...by[r2].slice(0,2)],type:"fullhouse",name:"葫芦"});
+    }
+  }
+  // straights: enumerate contiguous unique ranks, max useful length
+  const rankCards={};
+  for(const r of ranks)rankCards[RANK_VALUE[r]]=by[r][0];
+  const seqSets=[];
+  const vals=[...new Set(Object.keys(rankCards).map(Number))].sort((a,b)=>a-b);
+  const variants=[vals, vals.includes(1)?[...vals.filter(v=>v!==1),14].sort((a,b)=>a-b):vals];
+  for(const vv of variants){
+    let run=[];
+    for(const v of vv){
+      if(!run.length || v===run[run.length-1]+1)run.push(v); else{if(run.length>=5)seqSets.push([...run]);run=[v]}
+    }
+    if(run.length>=5)seqSets.push([...run]);
+  }
+  for(const run of seqSets){
+    for(let len=5;len<=run.length;len++){
+      for(let st=0;st+len<=run.length;st++){
+        const chosen=run.slice(st,st+len).map(v=>rankCards[v===14?1:v]);
+        out.push({cards:chosen,type:"straight",name:"顺子"});
+      }
+    }
+  }
+
+  // pair runs
+  const pairVals=ranks.filter(r=>by[r].length>=2).map(r=>RANK_VALUE[r]).sort((a,b)=>a-b);
+  const pairVariants=[pairVals,pairVals.includes(1)?[...pairVals.filter(v=>v!==1),14].sort((a,b)=>a-b):pairVals];
+  for(const vv of pairVariants){
+    let run=[];
+    for(const v of vv){
+      if(!run.length||v===run[run.length-1]+1)run.push(v); else{addPairRuns(run);run=[v]}
+    }
+    addPairRuns(run);
+  }
+  function addPairRuns(run){
+    if(run.length<3)return;
+    for(let len=3;len<=run.length;len++) for(let st=0;st+len<=run.length;st++){
+      const cards=[]; for(const v of run.slice(st,st+len)){const r=RANKS[(v===14?1:v)-1];cards.push(...by[r].slice(0,2))}
+      out.push({cards,type:"pairrun",name:"连对"});
+    }
+  }
+  return dedupeCandidates(out);
+}
+function groupByRank(hand){
+  const m={};for(const c of hand)(m[c.rank]??=[]).push(c);return m;
+}
+function dedupeCandidates(arr){
+  const seen=new Set();return arr.filter(x=>{const k=x.cards.map(c=>c.id).sort().join(",");if(seen.has(k))return false;seen.add(k);return true});
+}
+
+function aiBestPlay(p){
+  const cands=enumerateCandidates(p);
+  if(!cands.length)return null;
+  // 直接清空优先
+  const win=cands.find(c=>c.cards.length===p.hand.length);
+  if(win)return win;
+
+  let best=null,bestScore=-1e9;
+  for(const c of cands){
+    let s=0;
+    const n=c.cards.length;
+    if(n>=4)s+=35+n*4; else if(c.type==="pair")s+=24; else s+=2;
+
+    // 小手牌时不要机械单出，否则永远长不大
+    if(c.type==="single"){
+      if(G.extraMode)s += 30; // 额外回合适合甩尾
+      else if(p.hand.length<=4)s -= 50;
+      else if(p.hand.length===5)s -= 18;
+      else s += 3;
+      const same=p.hand.filter(x=>x.rank===c.cards[0].rank).length;
+      if(same>1)s-=20;
+    }
+    // 留意技能牌型奖励
+    if(p.skill.id==="artisan"){
+      if(c.type==="pairrun")s+=22;
+      if(c.type==="four")s+=15;
+      if(c.type==="straight")s+=10;
+      if(c.type==="fullhouse")s+=8;
+    }
+    // 若打完剩1且能拿额外回合，极大加分
+    const remain=p.hand.length-n;
+    if(remain===1 && n>=4)s+=120;
+    if(remain===2 && n>=4 && p.skill.id==="charge" && p.energy>=6)s+=100;
+    if(s>bestScore){bestScore=s;best=c}
+  }
+  if(best && best.type==="single" && bestScore<0)return null;
+  return best;
+}
+
+function chooseLeastUsefulCard(p,arr=p.hand){
+  const counts=rankCounts(p.hand);
+  return [...arr].sort((a,b)=>{
+    const ca=counts[a.rank], cb=counts[b.rank];
+    if(ca!==cb)return ca-cb;
+    return cardNeedScore(p,a)-cardNeedScore(p,b);
+  })[0];
+}
+
+async function executePlay(p,cards,type){
+  if(G.gameOver)return;
+  const ids=new Set(cards.map(c=>c.id));
+  const targetIndex=G.players.indexOf(p);
+  for(const c of cards) removeKnownFaceFromAllObservers(targetIndex,c);
+  p.hand=p.hand.filter(c=>!ids.has(c.id));
+  log(`${p.name} 打出【${typeName(type)}】${cards.length}张：${cards.map(c=>c.rank+c.suit).join(" ")}。`);
+  selected.clear();
+  G.lastPlay={name:p.name,type,cards:cards.map(c=>({rank:c.rank,suit:c.suit})),n:cards.length};
+
+  // 牌匠牌型附加效果
+  if(p.skill.id==="artisan"){
+    await resolveArtisanEffect(p,type);
+  }
+
+  // 4张及以上合法牌型先产生额外回合，再经过所有“获得额外回合”响应
+  let extraCount=0;
+  if(cards.length>=4 && canBaseExtraTrigger(p)) extraCount+=1;
+  if(p.skill.id==="artisan" && type==="pairrun") extraCount+=1;
+
+  if(extraCount>0) await grantExtraTurns(p,extraCount,"牌型");
+
+  updateTrapArming();
+  render();
+
+  // 所有效果结算后才判断是否真正清空
+  if(p.hand.length===0){
+    win(p); return;
+  }
+  await finishTurn();
+}
+
+function typeName(t){
+  return ({single:"单牌",pair:"对子",four:"四条",triple1:"三带一",fullhouse:"葫芦",straight:"顺子",pairrun:"连对"})[t]||t;
+}
+function canBaseExtraTrigger(p){
+  if(!G.extraMode)return true;
+  if(fieldActive("chain"))return true;
+  if(p.skill.id==="overload")return true;
+  if(p.skill.id==="charge" && p.energy>=4)return true;
+  return false;
+}
+
+
+function aiTrapShouldDraw(owner){
+  // 摸牌在本游戏里不是纯负面：低手牌时更愿意补资源；牌很多时谨慎。
+  if(owner.hand.length<=3)return true;
+  if(owner.hand.length<=5)return Math.random()<0.70;
+  return Math.random()<0.30;
+}
+
+function aiTrapShouldDiscard(owner){
+  if(owner.hand.length===0)return false;
+  if(owner.hand.length<=2)return false; // 太少时通常需要重新做牌
+  const counts=rankCounts(owner.hand);
+  const loose=owner.hand.some(c=>(counts[c.rank]||0)===1);
+  if(owner.hand.length>=6)return true;
+  return loose && Math.random()<0.75;
+}
+
+async function resolveTrapOwnerAdjustment(owner){
+  let didDraw=false, didDiscard=false, discardedCard=null;
+
+  if(owner.isAI) await aiThink();
+
+  // “是否摸1张”和“是否弃1张”是两个相互独立的选择。
+  let chooseDraw;
+  if(owner.isAI) chooseDraw=aiTrapShouldDraw(owner);
+  else chooseDraw=await askYesNo("截胡 · 自我调整", "【截胡】处罚已触发。你是否让自己额外摸1张？");
+
+  if(chooseDraw){
+    drawTo(owner,1,"skill");
+    didDraw=true;
+    log(`${owner.name} 借【截胡】效果选择摸1张。`);
+    updateTrapArming();
+  }
+
+  if(owner.hand.length>0){
+    let chooseDiscard;
+    if(owner.isAI) chooseDiscard=aiTrapShouldDiscard(owner);
+    else chooseDiscard=await askYesNo("截胡 · 自我调整", "你是否再弃1张手牌？");
+
+    if(chooseDiscard){
+      if(owner.isAI){
+        discardedCard=chooseLeastUsefulCard(owner);
+      }else{
+        discardedCard=await chooseDiscardCard(owner);
+      }
+      if(discardedCard){
+        const ownerIndex=G.players.indexOf(owner);
+        removeKnownFaceFromAllObservers(ownerIndex,discardedCard);
+        owner.hand=owner.hand.filter(c=>c.id!==discardedCard.id);
+        didDiscard=true;
+        log(`${owner.name} 借【截胡】效果弃掉 ${discardedCard.rank}${discardedCard.suit}。`);
+      }
+    }
+  }
+
+  render();
+
+  const parts=[];
+  if(didDraw)parts.push("摸1张");
+  if(didDiscard)parts.push(`弃1张（${discardedCard.rank}${discardedCard.suit}）`);
+  if(!parts.length)parts.push("不进行额外调整");
+
+  await showEventOverlay(
+    "skill",
+    "截胡者调整",
+    `【${owner.name}】`,
+    parts.join("；"),
+    950
+  );
+
+  // 这里是技能弃牌，不属于场地“强制清仓”。
+  // 若截胡者因此清空手牌，按当前“清空即胜利”的总规则判胜。
+  if(owner.hand.length===0){
+    win(owner);
+    return true;
+  }
+  return false;
+}
+
+
+
+
+function aiResonanceShouldDiscard(owner){
+  if(owner.hand.length===0)return false;
+  const counts=rankCounts(owner.hand);
+
+  // 优先清掉明显的孤张；手牌较多时更积极整理。
+  const loose=owner.hand.filter(c=>(counts[c.rank]||0)===1);
+  if(owner.hand.length>=6)return true;
+  if(loose.length && owner.hand.length>=3)return true;
+
+  // 手牌很少时保留组合潜力，偶尔才弃。
+  return Math.random()<0.25;
+}
+
+async function resolveResonanceOwnerDiscard(owner){
+  if(owner.hand.length===0)return false;
+
+  let doDiscard;
+  if(owner.isAI){
+    await aiThink();
+    doDiscard=aiResonanceShouldDiscard(owner);
+  }else{
+    doDiscard=await askYesNo(
+      "共振 · 回响",
+      "你获得了额外回合。其他玩家已各摸1张，你是否再弃1张手牌？"
+    );
+  }
+
+  if(!doDiscard){
+    log(`${owner.name} 放弃了【共振】的弃牌。`);
+    return false;
+  }
+
+  let card;
+  if(owner.isAI){
+    card=chooseLeastUsefulCard(owner);
+  }else{
+    card=await chooseDiscardCard(owner);
+  }
+
+  if(!card)return false;
+
+  const ownerIndex=G.players.indexOf(owner);
+  removeKnownFaceFromAllObservers(ownerIndex,card);
+  owner.hand=owner.hand.filter(c=>c.id!==card.id);
+
+  log(`${owner.name} 发动【共振】：弃掉 ${card.rank}${card.suit}。`);
+  render();
+
+  await showEventOverlay(
+    "skill",
+    "共振 · 回响",
+    "【共振】",
+    `${owner.name} 在令其他玩家各摸1张后，弃掉了1张牌。`,
+    900
+  );
+
+  if(owner.hand.length===0){
+    win(owner);
+    return true;
+  }
+  return false;
+}
+
+async function grantExtraTurns(p,count,source){
+  for(let k=0;k<count;k++){
+    // 截胡：每个持有该技能者都可独立响应
+    for(const owner of G.players){
+      if(owner.skill.id!=="trap")continue;
+      const st=G.trapStates[owner.name];
+      if(owner===p) continue; // 自己获得额外回合时，不会触发自己的【截胡】
+      if(st && st.armed && st.cooldown===0){
+        drawTo(p,2,"penalty");
+        st.armed=false; st.cooldown=5;
+        log(`⚠ ${owner.name} 的【截胡】触发：${p.name} 在获得额外回合前摸2张。`);
+        render();
+        await showEventOverlay(
+          "penalty",
+          "处罚技能触发",
+          "【截胡】",
+          `${p.name} 在获得额外回合前被塞入2张牌！`,
+          1250
+        );
+        updateTrapArming();
+
+        const ownerWon=await resolveTrapOwnerAdjustment(owner);
+        if(ownerWon || G.gameOver)return;
+      }
+    }
+
+    if(G.gameOver)return;
+
+    // 共振：每一个“获得额外回合”事件分别结算一次。
+    for(const owner of G.players){
+      if(owner.skill.id!=="resonance")continue;
+
+      if(owner===p){
+        // 自己起势：全场其他玩家各被塞1张，然后自己可以弃1张。
+        for(const other of G.players){
+          if(other!==p) drawTo(other,1,"skill");
+        }
+        log(`${owner.name} 的【共振】：自己获得额外回合，其他所有玩家各摸1张。`);
+        updateTrapArming();
+        render();
+
+        const resonanceWon=await resolveResonanceOwnerDiscard(owner);
+        if(resonanceWon || G.gameOver)return;
+      }else{
+        // 别人起势：自己必须被动摸1张，不能拒绝。
+        drawTo(owner,1,"skill");
+        log(`${owner.name} 的【共振】：因 ${p.name} 获得额外回合，被迫摸1张。`);
+        updateTrapArming();
+        render();
+      }
+    }
+
+    p.extraTurns++;
+    log(`${p.name} 获得1个额外回合（来源：${source}）。`);
+    updateTrapArming();
+  }
+}
+
+async function resolveArtisanEffect(p,type){
+  if(type==="triple1"){
+    const t=p.isAI?aiChooseDrawTarget(p,true):await chooseTarget("三带一：指定1名玩家摸1张",true);
+    drawTo(G.players[t],1,"skill"); log(`【牌匠·三带一】${G.players[t].name} 摸1张。`);
+    render();
+    await showEventOverlay("penalty","牌型处罚","【三带一】",`${G.players[t].name} 被指定额外摸1张。`,1050);
+  }else if(type==="fullhouse"){
+    let ts;
+    if(p.isAI){
+      const first=aiChooseDrawTarget(p,false);
+      const remain=G.players.map((_,i)=>i).filter(i=>i!==first);
+      remain.sort((a,b)=>G.players[a].hand.length-G.players[b].hand.length);
+      ts=[first,remain[0]];
+    }else ts=await chooseTwoTargets("葫芦：指定2名玩家各摸1张");
+    for(const t of ts)drawTo(G.players[t],1,"skill");
+    log(`【牌匠·葫芦】${ts.map(i=>G.players[i].name).join("、")} 各摸1张。`);
+    render();
+    await showEventOverlay("penalty","牌型处罚","【葫芦】",`${ts.map(i=>G.players[i].name).join("、")} 各被塞入1张牌。`,1100);
+  }else if(type==="straight"){
+    for(const o of G.players)if(o!==p)drawTo(o,1,"skill");
+    log(`【牌匠·顺子】其他所有玩家各摸1张。`);
+    render();
+    await showEventOverlay("penalty","牌型处罚","【顺子】","除出牌者外，其他所有玩家各摸1张。",1150);
+  }else if(type==="four"){
+    const t=p.isAI?aiChooseThreatTarget(p):await chooseTarget("四条：指定1名玩家下个正常回合跳过出牌阶段",false);
+    G.players[t].skipPlay=true;
+    log(`【牌匠·四条】${G.players[t].name} 下个正常回合将跳过出牌阶段。`);
+    render();
+    await showEventOverlay("penalty","强制控制","【四条】",`${G.players[t].name} 下个正常回合将跳过出牌阶段。`,1250);
+  }
+  updateTrapArming();
+}
+
+function aiChooseThreatTarget(p){
+  let arr=G.players.map((x,i)=>({x,i})).filter(o=>o.x!==p);
+  arr.sort((a,b)=>a.x.hand.length-b.x.hand.length);
+  return arr[0].i;
+}
+function aiChooseDrawTarget(p,allowSelf){
+  let arr=G.players.map((x,i)=>({x,i})).filter(o=>allowSelf||o.x!==p);
+  // 优先给手牌最少的对手“塞牌”，但如果自己牌很少且需要做牌，偶尔给自己
+  if(allowSelf && p.hand.length<=3 && Math.random()<0.45)return G.players.indexOf(p);
+  const opp=arr.filter(o=>o.x!==p).sort((a,b)=>a.x.hand.length-b.x.hand.length);
+  return opp.length?opp[0].i:arr[0].i;
+}
+
+function updateTrapArming(){
+  for(const owner of G.players){
+    if(owner.skill.id!=="trap")continue;
+    const st=G.trapStates[owner.name];
+    if(!st)continue;
+
+    // 【截胡】是限制别人的技能：只有“其他玩家”手牌>4才会使它待触发。
+    const anyOtherOver4=G.players.some(p=>p!==owner && p.hand.length>4);
+
+    if(st.cooldown===0 && anyOtherOver4 && !st.armed){
+      st.armed=true; st.everActivated=true;
+      log(`${owner.name} 的【截胡】进入待触发状态。`);
+    }
+  }
+}
+function tickTrapCooldowns(){
+  for(const owner of G.players){
+    if(owner.skill.id!=="trap")continue;
+    const st=G.trapStates[owner.name];
+    if(st && st.cooldown>0){
+      st.cooldown--;
+      if(st.cooldown===0){
+        st.armed=false;
+        log(`${owner.name} 的【截胡】冷却结束；若其他玩家有人手牌>4，将重新待触发。`);
+        updateTrapArming();
+      }
+    }
+  }
+}
+
+async function finishTurn(){
+  if(G.gameOver)return;
+  const p=currentPlayer();
+
+  // 充能8对应的“该额外回合结束后-4”
+  if(G.extraMode && p.skill.id==="charge" && p.chargeBurstExtraPending>0){
+    p.chargeBurstExtraPending--;
+    p.energy=Math.max(0,p.energy-4);
+    p.chargeBurstQueued=false;
+    log(`${p.name} 的8点充能额外回合结束：充能 -4（现为${p.energy}）。`);
+  }
+
+  // 强制清仓只在正常回合结束时触发
+  if(!G.extraMode && fieldActive("discard") && p.hand.length>0){
+    const card = p.isAI ? chooseLeastUsefulCard(p) : await chooseDiscardCard(p);
+    const wasOne=p.hand.length===1;
+    removeKnownFaceFromAllObservers(G.players.indexOf(p),card);
+    p.hand=p.hand.filter(c=>c.id!==card.id);
+    log(`【强制清仓】${p.name} 弃掉 ${card.rank}${card.suit}。`);
+    render();
+    await showEventOverlay("penalty","场地处罚","【强制清仓】",`${p.name} 回合结束，被迫弃掉1张牌。`,900);
+    if(wasOne){
+      drawTo(p,1,"field");
+      log(`因弃牌不能直接获胜，${p.name} 立即摸1张。`);
+    }
+  }
+
+  // 占卜：自己的正常回合真正结束时，秘密查看其余玩家各1张随机暗牌
+  if(!G.extraMode && p.skill.id==="divine"){
+    await resolveDivinationIntel(p);
+  }
+
+  render();
+  if(p.hand.length===0){win(p);return}
+
+  // 【骰命·6】在“本正常回合结束后”才真正获得额外回合，
+  // 因此此刻才会进入【截胡】/【共振】等“获得额外回合”响应链。
+  if(!G.extraMode && p.skill.id==="dice" && p.diceExtraPending){
+    p.diceExtraPending=false;
+    await grantExtraTurns(p,1,"骰命");
+    if(G.gameOver)return;
+  }
+
+  // 【加时赛】只在正常回合结束时登记一次。
+  // 不立刻 grant，是为了让这个正常回合原本已经获得的大牌/技能额外回合先结算。
+  if(!G.extraMode && fieldActive("overtime")){
+    p.fieldExtraPending=true;
+    log(`【加时赛】${p.name} 的场地额外回合已排队，将在本回合其他额外回合结算完后获得。`);
+  }
+
+  if(p.extraTurns>0){
+    p.extraTurns--;
+    await sleep(p.isAI?320:80);
+    startTurn(true);
+    return;
+  }
+
+  // 如果正常回合处于【加时赛】，并且此前由大牌/技能获得的额外回合已经全部打完，
+  // 此时才真正获得场地送出的那个额外回合。
+  if(p.fieldExtraPending){
+    p.fieldExtraPending=false;
+
+    await showEventOverlay(
+      "field",
+      "场地效果触发",
+      "【加时赛】",
+      `${p.name} 的其他额外回合已结算完毕，现在获得1个场地额外回合。`,
+      900
+    );
+
+    await grantExtraTurns(p,1,"场地·加时赛");
+    if(G.gameOver)return;
+
+    if(p.extraTurns>0){
+      p.extraTurns--;
+      await sleep(p.isAI?320:80);
+      startTurn(true);
+      return;
+    }
+  }
+
+  // 进入下一正常座位
+  G.extraMode=false;
+  G.current=(G.current+1)%G.players.length;
+  G.normalSeat++;
+  if(G.normalSeat>=G.players.length){
+    G.normalSeat=0;
+    await endRound();
+  }
+  startTurn(false);
+}
+
+async function endRound(){
+  if(G.field && G.fieldRoundsLeft>0){
+    G.fieldRoundsLeft--;
+    if(G.fieldRoundsLeft===0){
+      log(`场地【${G.field.name}】结束。`);
+      G.field=null;
+    }
+  }
+  if(G.round%5===0){
+    await drawField();
+  }
+  G.round++;
+}
+
+async function drawField(){
+  let pool=FIELDS.filter(f=>!G.fieldHistory.slice(-2).includes(f.id));
+  const f=pool[rand(pool.length)];
+  G.field={...f}; G.fieldRoundsLeft=f.dur; G.fieldHistory.push(f.id);
+  log(`🌐 新场地【${f.name}】生效：${f.desc}`);
+  render();
+  await showEventOverlay("field","场地规则变更",`【${f.name}】`,f.desc,1550);
+}
+
+function win(p){
+  G.gameOver=true; G.phase="结束"; render();
+  log(`🏆 ${p.name} 清空手牌，获胜！`);
+  showInfo("游戏结束", `<div class="big center">🏆 ${p.name} 获胜</div><div class="small center" style="margin-top:8px">这一版主要用于测试规则与AI出牌节奏。</div>`);
+}
+
+function render(){
+  if(!G)return;
+  $("roundNo").textContent=G.round;
+  $("fieldName").textContent=G.field?`${G.field.name}（剩${G.fieldRoundsLeft}轮）`:"无场地";
+  $("fieldDesc").textContent=G.field?G.field.desc:"第5、10、15…轮结束时抽取新场地";
+  const p=currentPlayer();
+  $("turnText").textContent=(G.extraMode?"额外回合 · ":"")+p.name;
+  $("phaseText").textContent=G.phase==="play"?"出牌":G.phase==="draw"?"摸牌":G.phase;
+
+  const lp=$("lastPlay");
+  if(G.lastPlay){
+    lp.innerHTML=`<div class="lp-tag">${G.lastPlay.name} · ${typeName(G.lastPlay.type)}（${G.lastPlay.n}张）</div>
+      <div class="lp-cards">${G.lastPlay.cards.map(c=>`<div class="lp-card ${isRed(c.suit)?"red":""}"><span class="rank">${c.rank}</span><span class="suit">${c.suit}</span></div>`).join("")}</div>`;
+  }else{
+    lp.innerHTML=`<div class="lp-empty">等待出牌…</div>`;
+  }
+
+  const wrap=$("players"); wrap.innerHTML="";
+  G.players.forEach((x,i)=>{
+    const d=document.createElement("div");
+    d.className="player"+(i===G.current&&!G.gameOver?" active":"")+(i===0?" me":"")+(expDesc.has(i)?" exp-desc":"")+(expIntel.has(i)?" exp-intel":"");
+    let extra="";
+    if(x.skill.id==="dice")extra+=`<div class="energy">🎲 本回合骰点：${x.diceValue??"待投"}</div>`;
+    if(x.skill.id==="charge")extra+=`<div class="energy">⚡ 充能：${x.energy}</div>`;
+    if(x.skill.id==="trap"){
+      const st=G.trapStates[x.name];
+      extra+=`<div class="energy">🪤 截胡：${st?.armed?"待触发":st?.cooldown?`冷却${st.cooldown}`:"未激活"}</div>`;
+    }
+    const rev=x.hand.filter(c=>c.revealed);
+    let privateIntel="";
+    if(i===0 && x.skill.id==="divine"){
+      const lines=[];
+      for(let ti=1;ti<G.players.length;ti++){
+        const target=G.players[ti];
+
+        // 私人占卜得到的实体牌
+        const privateCards=knownCardsFor(x,ti);
+
+        // 所有通过【明牌】等方式已经公开的牌，自动加入占卜情报堆
+        const publicCards=target.hand.filter(c=>c.revealed);
+
+        // 按实体牌ID去重：如果原本占卜过，后来又明牌，只显示一次，并升级为金色公开状态
+        const merged=new Map();
+        for(const c of privateCards) merged.set(c.id,{card:c,public:c.revealed});
+        for(const c of publicCards) merged.set(c.id,{card:c,public:true});
+
+        const groups={};
+        for(const {card,public:pub} of merged.values()){
+          const key=`${faceKey(card)}|${pub?"public":"private"}`;
+          groups[key]=(groups[key]||0)+1;
+        }
+
+        const text=Object.entries(groups).map(([key,n])=>{
+          const parts=key.split("|");
+          const rank=parts[0], suit=parts[1], state=parts[2];
+          const cls=state==="public"?"intel-public":"intel-private";
+          return `<span class="${cls}">${rank}${suit}${n>1?`×${n}`:""}</span>`;
+        }).join("、");
+
+        lines.push(`<div>${target.name}：${text||"暂无"}</div>`);
+      }
+      privateIntel=`<div class="intel-row"><span class="sk-chip">🔮 占卜情报</span></div>
+      <div class="intel-body">
+        <div class="known-title">仅你可见</div>
+        ${lines.join("")}
+        <div class="intel-legend"><span class="intel-public">金色</span> = 已公开 / 明牌；普通颜色 = 仅你占卜得知</div>
+      </div>`;
+    }
+    d.innerHTML=`<div class="avatar"><div class="face" style="background-image:url('${AVATARS[i]}')"></div><div class="meta"><div class="name">${x.name}</div><div class="skname">${x.skill.name}</div></div></div>
+      <div class="count">${x.hand.length}<span class="small">张</span></div>
+      ${extra}
+      <div class="skill-row"><span class="sk-chip">技能详情</span></div>
+      <div class="sk-body">${x.skill.desc}</div>
+      ${rev.length?`<div class="revealed">明牌：${rev.map(c=>c.rank+c.suit).join(" ")}</div>`:""}
+      ${privateIntel}`;
+    wrap.appendChild(d);
+  });
+  wrap.onclick=ev=>{
+    const chip=ev.target.closest(".sk-chip"); if(!chip)return;
+    const seat=chip.closest(".player"); if(!seat)return;
+    const idx=[...wrap.children].indexOf(seat);
+    const isIntel=!!chip.closest(".intel-row");
+    const set=isIntel?expIntel:expDesc, cls=isIntel?"exp-intel":"exp-desc";
+    if(set.has(idx)){set.delete(idx);seat.classList.remove(cls)}else{set.add(idx);seat.classList.add(cls)}
+  };
+
+  const hand=$("hand");hand.innerHTML="";
+  G.players[0].hand.forEach(c=>{
+    const div=document.createElement("div");
+    div.className=`card ${isRed(c.suit)?"red":""} ${selected.has(c.id)?"selected":""} ${c.revealed?"faceup":""}`;
+    div.innerHTML=`<span class="rank">${c.rank}</span><span class="suit">${c.suit}</span>`;
+    div.onclick=()=>{
+      if(G.current!==0||G.phase!=="play"||G.gameOver)return;
+      selected.has(c.id)?selected.delete(c.id):selected.add(c.id);render();
+    };
+    hand.appendChild(div);
+  });
+
+  const mine=G.players[0];
+  const chosen=mine.hand.filter(c=>selected.has(c.id));
+  const cl=classify(chosen,mine);
+  $("selectionText").textContent=chosen.length?(cl.ok?`已选 ${chosen.length} 张：${cl.name}`:`已选 ${chosen.length} 张：${cl.msg}`):"选择手牌后出牌。";
+
+  const canHuman=G.current===0 && G.phase==="play" && !G.gameOver;
+  $("playBtn").disabled=!canHuman || !cl.ok;
+  $("passBtn").disabled=!canHuman;
+  $("sortBtn").disabled=G.gameOver;
+  $("skillBtn").disabled=!(canHuman && mine.skill.id==="reveal" && !mine.revealUsed && mine.hand.some(c=>!c.revealed));
+  $("skillBtn").textContent=mine.skill.id==="reveal"?"发动【明牌】":"无主动出牌技能";
+}
+function isRed(s){return s==="♥"||s==="♦"}
+function cardHTML(c,selectedFlag){
+  return `<div class="card ${isRed(c.suit)?"red":""} ${selectedFlag?"selected":""}"><span class="rank">${c.rank}</span><span class="suit">${c.suit}</span></div>`;
+}
+
+function populateSkillSelect(){
+  const sel=$("skillSelect");
+  if(!sel)return;
+  sel.innerHTML=`<option value="random">随机技能</option>` + SKILLS.map(s=>`<option value="${s.id}">${s.name}</option>`).join("");
+  sel.value="random";
+}
+populateSkillSelect();
+ensureLogDrawerPortal();
+
+$("playBtn").onclick=async()=>{
+  if(!G||G.current!==0||G.phase!=="play")return;
+  const p=G.players[0], cards=p.hand.filter(c=>selected.has(c.id));
+  const cl=classify(cards,p);
+  if(!cl.ok){toast(cl.msg);return}
+  await executePlay(p,cards,cl.type);
+};
+$("passBtn").onclick=async()=>{
+  if(!G||G.current!==0||G.phase!=="play")return;
+  log("你选择不出。"); selected.clear(); await finishTurn();
+};
+$("sortBtn").onclick=()=>{
+  if(!G)return;
+  G.players[0].hand.sort((a,b)=>RANK_VALUE[a.rank]-RANK_VALUE[b.rank] || SUITS.indexOf(a.suit)-SUITS.indexOf(b.suit));
+  render();
+};
+$("skillBtn").onclick=async()=>{
+  if(!G||G.current!==0||G.phase!=="play")return;
+  const p=G.players[0];
+  if(p.skill.id!=="reveal"||p.revealUsed)return;
+  const options=p.hand.filter(c=>!c.revealed);
+  const cardId=await chooseCardFromList("选择要公开的一张牌",options);
+  if(!cardId)return;
+  const c=p.hand.find(x=>x.id===cardId);
+  // 明牌不会从占卜情报中移除；占卜区会自动把公开牌标成金色。
+  c.revealed=true;p.revealUsed=true;
+  const t=await chooseTarget("选择一名玩家摸1张（可以选自己）",true);
+  drawTo(G.players[t],1,"skill");
+  log(`你公开 ${c.rank}${c.suit}，令 ${G.players[t].name} 摸1张。`);
+  updateTrapArming();render();
+  await showEventOverlay("skill","技能发动","【明牌】",`你公开 ${c.rank}${c.suit}，并令 ${G.players[t].name} 额外摸1张。`,900);
+};
+$("restartBtn").onclick=()=>{
+  clearTimeout(aiTimer);
+  G=null;
+  selected.clear();
+  closeModal();
+  $("game").classList.add("hidden");
+  $("startPanel").classList.remove("hidden");
+};
+$("startBtn").onclick=()=>newGame();
+$("rulesBtn").onclick=()=>showRules();
+$("codexBtn").onclick=()=>showCodex("skills");
+$("logToggleBtn").onclick=()=>$("logDrawer").classList.toggle("show");
+$("logCloseBtn").onclick=()=>$("logDrawer").classList.remove("show");
+
+function sortHandCards(cards){
+  return [...cards].sort((a,b)=>RANK_VALUE[a.rank]-RANK_VALUE[b.rank] || SUITS.indexOf(a.suit)-SUITS.indexOf(b.suit));
+}
+
+function choiceContextHtml(){
+  if(!G || !G.players || !G.players[0])return "";
+  const me=G.players[0];
+  const cards=sortHandCards(me.hand);
+  const handHtml=cards.length
+    ? cards.map(c=>`<div class="choice-mini-card ${isRed(c.suit)?"red":""}">
+        <span>${c.rank}</span><span class="mini-suit">${c.suit}</span>
+      </div>`).join("")
+    : `<div class="small">当前手牌为空。</div>`;
+
+  return `<div class="choice-context">
+    <div class="choice-context-tools">
+      <button type="button" class="choice-context-btn" data-choice-hand>
+        我的手牌（${me.hand.length}）
+      </button>
+      <button type="button" class="choice-context-btn" data-choice-log>
+        查看日志
+      </button>
+    </div>
+    <div class="choice-hand-panel" data-choice-hand-panel>
+      <div class="choice-hand-title">当前自己的完整手牌</div>
+      <div class="choice-mini-hand">${handHtml}</div>
+    </div>
+  </div>`;
+}
+
+function bindChoiceContext(){
+  const sheet=$("sheet");
+  const handBtn=sheet.querySelector("[data-choice-hand]");
+  const handPanel=sheet.querySelector("[data-choice-hand-panel]");
+  const logBtn=sheet.querySelector("[data-choice-log]");
+
+  if(handBtn && handPanel){
+    handBtn.onclick=()=>{
+      const show=!handPanel.classList.contains("show");
+      handPanel.classList.toggle("show",show);
+      handBtn.classList.toggle("active",show);
+      handBtn.textContent=show
+        ? `收起手牌（${G.players[0].hand.length}）`
+        : `我的手牌（${G.players[0].hand.length}）`;
+    };
+  }
+
+  if(logBtn){
+    logBtn.onclick=()=>{
+      ensureLogDrawerPortal();
+      $("logDrawer").classList.toggle("show");
+      logBtn.classList.toggle("active",$("logDrawer").classList.contains("show"));
+    };
+  }
+}
+
+function setChoiceSheet(html){
+  const sheet=$("sheet");
+  sheet.innerHTML=choiceContextHtml()+html;
+  bindChoiceContext();
+}
+
+async function chooseDiscardCard(p){
+  const id=await chooseCardFromList("强制清仓：选择弃1张牌",p.hand);
+  return p.hand.find(c=>c.id===id) || p.hand[0];
+}
+function chooseCardFromList(title,cards){
+  return new Promise(resolve=>{
+    const sheet=$("sheet");setChoiceSheet(`<h3>${title}</h3><div class="cards" id="pickCards"></div>`);
+    const w=sheet.querySelector("#pickCards");
+    sortHandCards(cards).forEach(c=>{
+      const d=document.createElement("div");d.className=`card ${isRed(c.suit)?"red":""}`;
+      d.innerHTML=`<span class="rank">${c.rank}</span><span class="suit">${c.suit}</span>`;
+      d.onclick=()=>{closeModal();resolve(c.id)};w.appendChild(d);
+    });
+    openModal();
+  });
+}
+
+function chooseMultipleCardsFromList(title,cards,count){
+  return new Promise(resolve=>{
+    let picks=[];
+    const renderPicker=()=>{
+      const sheet=$("sheet");
+      setChoiceSheet(`<h3>${title}</h3>
+        <div class="small">请选择 ${count} 张（已选 ${picks.length}/${count}）</div>
+        <div class="cards" id="multiPickCards"></div>
+        <button id="multiConfirm" class="choice" ${picks.length===count?"":"disabled"}>确认选择</button>`);
+
+      const w=sheet.querySelector("#multiPickCards");
+      sortHandCards(cards).forEach(c=>{
+        const picked=picks.some(x=>x.id===c.id);
+        const d=document.createElement("div");
+        d.className=`card ${isRed(c.suit)?"red":""} ${picked?"selected":""}`;
+        d.innerHTML=`<span class="rank">${c.rank}</span><span class="suit">${c.suit}</span>`;
+        d.onclick=()=>{
+          const idx=picks.findIndex(x=>x.id===c.id);
+          if(idx>=0){
+            picks.splice(idx,1);
+          }else if(picks.length<count){
+            picks.push(c);
+          }
+          renderPicker();
+        };
+        w.appendChild(d);
+      });
+
+      sheet.querySelector("#multiConfirm").onclick=()=>{
+        if(picks.length!==count)return;
+        closeModal();
+        resolve([...picks]);
+      };
+    };
+    renderPicker();
+    openModal();
+  });
+}
+
+function chooseCardOrNone(title,cards,noneLabel="不选择"){
+  return new Promise(resolve=>{
+    const sheet=$("sheet");
+    setChoiceSheet(`<h3>${title}</h3><div class="cards" id="pickCards"></div><button id="pickNone" class="choice">${noneLabel}</button>`);
+    const w=sheet.querySelector("#pickCards");
+    sortHandCards(cards).forEach(c=>{
+      const d=document.createElement("div");
+      d.className=`card ${isRed(c.suit)?"red":""}`;
+      d.innerHTML=`<span class="rank">${c.rank}</span><span class="suit">${c.suit}</span>`;
+      d.onclick=()=>{closeModal();resolve(c.id)};
+      w.appendChild(d);
+    });
+    sheet.querySelector("#pickNone").onclick=()=>{closeModal();resolve(null)};
+    openModal();
+  });
+}
+
+function chooseTarget(title,allowSelf){
+  return new Promise(resolve=>{
+    const choices=G.players.map((p,i)=>({p,i})).filter(o=>allowSelf||o.i!==G.current);
+    const sheet=$("sheet");setChoiceSheet(`<h3>${title}</h3>`);
+    choices.forEach(({p,i})=>{
+      const b=document.createElement("button");b.className="choice";b.textContent=`${p.name} · 手牌${p.hand.length}张`;
+      b.onclick=()=>{closeModal();resolve(i)};sheet.appendChild(b);
+    });
+    openModal();
+  });
+}
+function chooseTwoTargets(title){
+  return new Promise(resolve=>{
+    let picks=[];
+    const sheet=$("sheet");setChoiceSheet(`<h3>${title}</h3><div class="small">请选择两个不同玩家。</div>`);
+    G.players.forEach((p,i)=>{
+      const b=document.createElement("button");b.className="choice";b.textContent=`${p.name} · 手牌${p.hand.length}张`;
+      b.onclick=()=>{
+        if(picks.includes(i))return;
+        picks.push(i);b.disabled=true;b.textContent+=" ✓";
+        if(picks.length===2){closeModal();resolve(picks)}
+      };sheet.appendChild(b);
+    });
+    openModal();
+  });
+}
+function askYesNo(title,text){
+  return new Promise(resolve=>{
+    const s=$("sheet");setChoiceSheet(`<h3>${title}</h3><div style="margin-bottom:12px">${text}</div>`);
+    [["是",true],["否",false]].forEach(([lab,val])=>{
+      const b=document.createElement("button");b.className="choice";b.textContent=lab;b.onclick=()=>{closeModal();resolve(val)};s.appendChild(b);
+    });openModal();
+  });
+}
+function modalChoices(title,html,choices){
+  return new Promise(resolve=>{
+    const s=$("sheet");setChoiceSheet(`<h3>${title}</h3>${html}`);
+    for(const [val,lab] of choices){
+      const b=document.createElement("button");b.className="choice";b.textContent=lab;b.onclick=()=>{closeModal();resolve(val)};s.appendChild(b);
+    }openModal();
+  });
+}
+function openModal(){$("modal").classList.add("show")}
+function closeModal(){
+  $("modal").classList.remove("show");
+  $("logDrawer").classList.remove("show");
+}
+function showInfo(title,html){
+  const s=$("sheet");s.innerHTML=`<h3>${title}</h3>${html}<button class="choice" onclick="document.getElementById('modal').classList.remove('show')">关闭</button>`;openModal();
+}
+
+let codexTab = "skills";
+
+function showCodex(tab="skills"){
+  codexTab = tab;
+  renderCodex();
+  openModal();
+}
+
+function renderCodex(){
+  const s=$("sheet");
+  const isSkills=codexTab==="skills";
+  const items=isSkills?SKILLS:FIELDS;
+
+  const htmlItems = items.map((item,idx)=>{
+    let extra="";
+    if(!isSkills){
+      extra = `<span class="codex-tag">持续 ${item.dur} 轮</span>`;
+    }else{
+      if(item.id==="dice") extra = `<span class="codex-tag">开局随机</span>`;
+      else if(item.id==="charge") extra = `<span class="codex-tag">成长型</span>`;
+      else if(item.id==="trap") extra = `<span class="codex-tag">处罚 / 防偷家</span>`;
+      else if(item.id==="artisan") extra = `<span class="codex-tag">牌型强化</span>`;
+      else if(item.id==="divine") extra = `<span class="codex-tag">牌堆控制</span>`;
+      else if(item.id==="reveal") extra = `<span class="codex-tag">主动技能</span>`;
+      else if(item.id==="overload") extra = `<span class="codex-tag">爆发型</span>`;
+      else if(item.id==="resonance") extra = `<span class="codex-tag">互动型</span>`;
+    }
+    return `<div class="codex-item">
+      <div class="codex-item-title">${idx+1}. ${item.name}${extra}</div>
+      <div class="codex-item-desc">${item.desc}</div>
+    </div>`;
+  }).join("");
+
+  s.innerHTML=`
+    <div class="row space" style="margin-bottom:4px">
+      <h3 style="margin:0">技能 / 场地图鉴</h3>
+      <button id="codexCloseTop" style="padding:7px 10px">关闭</button>
+    </div>
+    <div class="small">当前 V0.22 已收录 ${SKILLS.length} 个技能、${FIELDS.length} 个场地规则。</div>
+    <div class="codex-tabs">
+      <button id="skillsTab" class="codex-tab ${isSkills?"active":""}">全部技能（${SKILLS.length}）</button>
+      <button id="fieldsTab" class="codex-tab ${!isSkills?"active":""}">全部场地（${FIELDS.length}）</button>
+    </div>
+    <div class="codex-list">${htmlItems}</div>
+    <div class="codex-footer">
+      <button id="codexBackBtn" class="choice">返回开始界面</button>
+    </div>
+  `;
+
+  s.querySelector("#codexCloseTop").onclick=closeModal;
+  s.querySelector("#codexBackBtn").onclick=closeModal;
+  s.querySelector("#skillsTab").onclick=()=>{codexTab="skills";renderCodex();};
+  s.querySelector("#fieldsTab").onclick=()=>{codexTab="fields";renderCodex();};
+}
+
+function showRules(){
+  showInfo("当前原型规则",`
+    <div class="ruleline">• 4副52张标准扑克混洗，不使用大小王。</div>
+    <div class="ruleline">• 每人开局2张；每个正常回合先摸牌，再进入出牌阶段。</div>
+    <div class="ruleline">• 可出：单牌、三带一、四条、葫芦、5张起顺子、6张起连对；【充能】达到6后可出对子。</div>
+    <div class="ruleline">• 一次打出4张及以上的合法牌型：获得1个额外回合。</div>
+    <div class="ruleline">• 额外回合不摸牌；基础“4张及以上牌型”奖励默认不能在额外回合继续触发，除非技能/场地明确允许。</div>
+    <div class="ruleline">• 开局可自行选择自己的技能；3名AI从剩余技能中随机获得技能，所有人的技能公开。</div>
+    <div class="ruleline">• 【骰命】每个自己的正常回合开始时公开投1D6，点数效果必须结算，不能拒绝；玩家只负责选择目标或具体牌。2点为【选择2】；3/4点若把自己选为目标，自己的那一份改为【选择2】；5点先强制弃2，若弃牌后手牌为0则立即获胜，否则继续【选择3】；6点的额外回合在当前正常回合结束后才真正获得。</div>
+    <div class="ruleline">• 【充能】在“每次获得1张牌”时逐张判断，同点数即加能量，不区分正常摸牌、场地、处罚、他人技能或自己的技能。</div>
+    <div class="ruleline">• 【共振】在别人每获得1个额外回合时必须摸1张；自己每获得1个额外回合时，其他玩家各摸1张，随后自己可以弃1张。若一次获得多个额外回合，则逐个分别结算。</div>
+    <div class="ruleline">• 【充能】阈值现为2/4/6/8：额外摸牌 / 额外回合连锁 / 可出对子 / 立即获得额外回合。</div>
+    <div class="ruleline">• 【占卜】只在正常摸牌阶段触发；额外回合没有摸牌阶段，处罚/技能造成的效果摸牌也不会触发占卜。</div>
+    <div class="ruleline">• 【占卜】的私人窥牌仅占卜者本人可见；所有公开/明牌会自动同步进占卜情报区并以金色显示，无需玩家自己把两处信息相加。</div>
+    <div class="ruleline">• 【截胡】只针对其他玩家：当其他玩家中有人手牌>4时进入待触发；截胡者自己的额外回合不会触发自己的【截胡】。触发后令那名其他玩家摸2张，截胡本人再可独立选择摸1张、弃1张。</div>
+    <div class="ruleline">• 占卜情报按“具体实体牌”记录；同一张牌从暗牌变成明牌时不会重复显示，只会在占卜区变成金色；牌真正离手后情报才消失。</div>
+    <div class="ruleline">• AI不会读取你的暗牌，只按公开信息、自己的手牌以及它通过技能合法获得的信息做简单决策。</div>
+    <div class="ruleline">• 第5、10、15…轮结束时随机抽取一个场地规则。</div>
+    <div class="ruleline">• 【加时赛】持续1轮：每名玩家先结算正常回合及该回合已经产生的其他额外回合，最后再获得1个场地额外回合。它不会额外开放连锁；普通玩家的额外回合仍不能靠4张以上牌型继续触发，只有技能本身允许连锁的玩家可以在这些额外回合中继续连锁。</div>
+    <div class="ruleline">• 清空手牌获胜；技能响应先于胜利判定结算，因此【截胡】可能阻止“5+1”偷家。</div>
+    <div style="margin-top:12px"><button class="choice" onclick="document.getElementById('modal').classList.remove('show')">返回开始界面</button></div>
+  `);
+}
+
+// Initial render only
+</script>
+</body>
+</html>
