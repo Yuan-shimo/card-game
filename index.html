@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
@@ -21,6 +21,8 @@
     <div class="topbar-actions">
       <button class="icon-btn audio-btn" id="sfxToggleBtn" title="音效开关">🔊</button>
       <button class="icon-btn audio-btn" id="musicToggleBtn" title="音乐开关">🎵</button>
+      <button class="icon-btn" id="saveExportTopBtn" title="生成存档码">存档码</button>
+      <button class="icon-btn" id="saveImportTopBtn" title="输入存档码">导入码</button>
       <button class="icon-btn admin-btn" id="adminBtn" title="⚙">⚙</button>
       <button class="icon-btn" id="logToggleBtn">日志</button>
       <button class="icon-btn" id="restartBtn">退出</button>
@@ -33,7 +35,7 @@
         <div class="lobby-brand">
           <div class="lobby-kicker"><span>♠</span> PARTY CARD <span>♥</span></div>
           <div class="title">欢乐牌局</div>
-          <div class="subtitle">1人 VS 3AI <span class="version-dot">·</span> V0.31</div>
+          <div class="subtitle">1人 VS 3AI <span class="version-dot">·</span> V0.31 <span class="version-dot">·</span> Build v4.6</div>
         </div>
         <div class="lobby-wallet">
           <span class="wallet-gem">🔮</span>
@@ -98,11 +100,20 @@
             <span class="skill-picker-arrow">›</span>
           </button>
         </div>
-        <div class="lobby-tools-wrap">
-          <div class="lobby-control-title"><span class="control-dot"></span>牌局资料</div>
-          <div class="lobby-tools">
-            <button class="btn btn-sort" id="rulesBtn"><span class="tool-icon">?</span>玩法规则</button>
-            <button class="btn btn-skill" id="codexBtn"><span class="tool-icon">✦</span>技能 / 场地图鉴</button>
+        <div class="lobby-side-tools">
+          <div class="lobby-tools-wrap">
+            <div class="lobby-control-title"><span class="control-dot"></span>牌局资料</div>
+            <div class="lobby-tools lobby-tools-info">
+              <button class="btn btn-sort" id="rulesBtn"><span class="tool-icon">?</span>玩法规则</button>
+              <button class="btn btn-skill" id="codexBtn"><span class="tool-icon">✦</span>技能 / 场地图鉴</button>
+            </div>
+          </div>
+          <div class="lobby-tools-wrap save-tools-wrap">
+            <div class="lobby-control-title"><span class="control-dot"></span>存档管理</div>
+            <div class="lobby-tools lobby-tools-save">
+              <button class="btn btn-sort" id="saveExportBtn"><span class="tool-icon">▣</span>生成存档码</button>
+              <button class="btn btn-sort" id="saveImportBtn"><span class="tool-icon">↥</span>输入存档码</button>
+            </div>
           </div>
         </div>
         <div class="lobby-tip"><span>●</span> 选择场次即可开始对局 <i></i> 技能在入场前可随时更换</div>
@@ -218,8 +229,10 @@
     </div>
   </div>
 
+  <div class="admin-status" id="adminStatus">当前：未开始对局</div>
+
   <div class="admin-section">
-    <div class="admin-section-title">🎮 游戏作弊 <span class="admin-tag">仅对局中</span></div>
+    <div class="admin-section-title">🎮 对局测试 <span class="admin-tag">仅对局中</span></div>
     <div class="admin-btn-grid">
       <button class="admin-test-btn gold" id="adminWin">🏆 直接获胜</button>
       <button class="admin-test-btn danger" id="adminLose">立即失败</button>
@@ -227,8 +240,20 @@
       <button class="admin-test-btn" id="adminMult2">倍数 ×2</button>
       <button class="admin-test-btn" id="adminExtraTurn">+1 额外回合</button>
       <button class="admin-test-btn" id="adminClearHand">清空手牌</button>
+      <button class="admin-test-btn" id="adminDraw1">摸1张牌</button>
       <button class="admin-test-btn" id="adminDraw5">摸5张牌</button>
+      <button class="admin-test-btn" id="adminEnergyMax">充能设为8</button>
       <button class="admin-test-btn danger" id="adminForceField">刷新场地</button>
+      <button class="admin-test-btn" id="adminClearField">清除场地</button>
+      <button class="admin-test-btn" id="adminRunAI">▶ 立即执行AI</button>
+    </div>
+  </div>
+
+  <div class="admin-section">
+    <div class="admin-section-title">🧪 测试快照</div>
+    <div class="admin-btn-grid">
+      <button class="admin-test-btn" id="adminSaveSnapshot">保存当前状态</button>
+      <button class="admin-test-btn" id="adminRestoreSnapshot">恢复测试状态</button>
     </div>
   </div>
 
@@ -237,7 +262,6 @@
     <div class="admin-btn-grid">
       <button class="admin-test-btn" id="adminDumpState">📋 打印游戏状态</button>
       <button class="admin-test-btn danger" id="adminResetBeans">重置星石</button>
-      <button class="admin-test-btn" id="adminSkipAI">⏩ 跳过AI回合</button>
     </div>
   </div>
 </div>
@@ -252,6 +276,8 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="save-code-mask" id="saveCodeMask"><div class="save-code-panel"><div class="save-code-head"><div><b id="saveCodeTitle">存档码</b><span id="saveCodeHint">复制后可在其他设备恢复</span></div><button type="button" id="saveCodeClose">×</button></div><textarea id="saveCodeText" spellcheck="false" placeholder="在这里粘贴存档码"></textarea><div class="save-code-actions"><button class="btn btn-sort" id="saveCodeCopy">复制存档码</button><button class="btn btn-play" id="saveCodeApply">导入此存档码</button></div></div></div>
 <script src="assets/js/game.js" defer></script>
 </body>
 </html>
+

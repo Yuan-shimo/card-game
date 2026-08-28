@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 const SUITS = ["♠","♥","♣","♦"];
 const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
@@ -208,7 +208,72 @@ function renderStoredBalance(){
   if(el)el.textContent=beanBalances[0].toLocaleString("zh-CN");
   if(typeof updateLobbyRooms==="function")updateLobbyRooms();
 }
+const SAVE_FILE_MAGIC="happy-card-game-save";
+const SAVE_FILE_VERSION=1;
+const SAVE_BUILD="v4.6";
+const SAVE_CODE_PREFIX="HCG1-";
 
+function buildPortableSave(){
+  return {
+    magic:SAVE_FILE_MAGIC,version:SAVE_FILE_VERSION,build:SAVE_BUILD,exportedAt:new Date().toISOString(),
+    balances:[...beanBalances],selectedRoomId,game:G?JSON.parse(JSON.stringify(G)):null,
+    preferences:{sfxMuted:localStorage.getItem("happy-card-game.sfxMuted")==="1",musicMuted:localStorage.getItem("happy-card-game.musicMuted")==="1"}
+  };
+}
+function utf8ToBase64(text){
+  const bytes=new TextEncoder().encode(text); let binary="";
+  for(let i=0;i<bytes.length;i+=8192) binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  return btoa(binary).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
+}
+function base64ToUtf8(text){
+  let b64=text.replace(/-/g,"+").replace(/_/g,"/"); while(b64.length%4)b64+="=";
+  const binary=atob(b64); const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+function createSaveCode(){ return SAVE_CODE_PREFIX+utf8ToBase64(JSON.stringify(buildPortableSave())); }
+function parseSaveCode(code){
+  const clean=String(code||"").trim().replace(/\s+/g,"");
+  if(!clean.startsWith(SAVE_CODE_PREFIX))throw new Error("不是有效的欢乐牌局存档码");
+  let data; try{ data=JSON.parse(base64ToUtf8(clean.slice(SAVE_CODE_PREFIX.length))); }catch(e){ throw new Error("存档码损坏或复制不完整"); }
+  validatePortableSave(data); return data;
+}
+function validatePortableSave(data){
+  if(!data||data.magic!==SAVE_FILE_MAGIC)throw new Error("存档格式不正确");
+  if(data.version!==SAVE_FILE_VERSION)throw new Error("暂不支持此存档版本");
+  if(!Array.isArray(data.balances)||data.balances.length!==4||!data.balances.every(v=>Number.isFinite(v)&&v>=0))throw new Error("存档余额数据无效");
+  if(data.game && (!Array.isArray(data.game.players)||data.game.players.length!==4))throw new Error("对局数据不完整");
+}
+function applyPortableSave(data){
+  clearTimeout(aiTimer); aiTimer=null;
+  beanBalances.splice(0,beanBalances.length,...data.balances.map(v=>Math.floor(v)));
+  if(ROOMS[data.selectedRoomId])selectedRoomId=data.selectedRoomId;
+  G=data.game?JSON.parse(JSON.stringify(data.game)):null; selected.clear(); expIntel.clear(); saveBeanBalances(); renderStoredBalance();
+  try{localStorage.setItem("happy-card-game.sfxMuted",data.preferences?.sfxMuted?"1":"0");localStorage.setItem("happy-card-game.musicMuted",data.preferences?.musicMuted?"1":"0");}catch(e){}
+  if(typeof AudioSys!=="undefined"){AudioSys.loadPrefs();AudioSys.applyPrefsUI();}
+  if(G){$("startPanel").classList.add("hidden");$("game").classList.remove("hidden");updateTrapArming();render();if(currentPlayer()?.isAI&&G.phase==="play")scheduleAI();}
+  else{$("game").classList.add("hidden");$("startPanel").classList.remove("hidden");updateLobbyRooms();}
+}
+function openSaveCode(mode="export"){
+  const mask=$("saveCodeMask"), text=$("saveCodeText"), title=$("saveCodeTitle"), hint=$("saveCodeHint"), copy=$("saveCodeCopy"), apply=$("saveCodeApply"); if(!mask)return;
+  const exporting=mode==="export"; title.textContent=exporting?"导出存档码":"导入存档码"; hint.textContent=exporting?"复制并妥善保存，之后可恢复当前进度":"粘贴完整存档码后点击导入";
+  text.value=exporting?createSaveCode():""; text.readOnly=exporting; copy.style.display=exporting?"":"none"; apply.style.display=exporting?"none":""; mask.classList.add("show"); setTimeout(()=>{text.focus();if(exporting)text.select();},30);
+}
+function closeSaveCode(){ $("saveCodeMask")?.classList.remove("show"); }
+async function copyCurrentSaveCode(){
+  const text=$("saveCodeText")?.value||""; if(!text)return;
+  try{await navigator.clipboard.writeText(text);toast("存档码已复制");}catch(e){$("saveCodeText")?.select();document.execCommand("copy");toast("存档码已复制");}
+}
+function importSaveCodeFromUI(){
+  try{const data=parseSaveCode($("saveCodeText")?.value);if(G&&!G.gameOver&&!confirm("导入存档会覆盖当前对局，确定继续吗？"))return;applyPortableSave(data);closeSaveCode();toast(G?"存档码已导入，对局已恢复":"存档码已导入");}
+  catch(err){console.error("导入存档码失败",err);alert(`导入失败：${err.message||"存档码无效"}`);}
+}
+function initSaveTransferUI(){
+  ["saveExportBtn","saveExportTopBtn"].forEach(id=>$(id)?.addEventListener("click",()=>openSaveCode("export")));
+  ["saveImportBtn","saveImportTopBtn"].forEach(id=>$(id)?.addEventListener("click",()=>openSaveCode("import")));
+  $("saveCodeClose")?.addEventListener("click",closeSaveCode); $("saveCodeCopy")?.addEventListener("click",copyCurrentSaveCode); $("saveCodeApply")?.addEventListener("click",importSaveCodeFromUI);
+  $("saveCodeMask")?.addEventListener("click",e=>{if(e.target===$("saveCodeMask"))closeSaveCode();});
+}
 const beanBalances=loadBeanBalances();
 const ROOMS={
   beginner:{id:"beginner",name:"新手场",baseBet:20,minBalance:0},
@@ -499,7 +564,6 @@ async function startTurn(extra){
 
   G.phase="draw";
   render();
-  showTurnBanner(p,false);
 
   // 轮到人类玩家的提示音 + 视觉
   if(!p.isAI && typeof AudioSys!=="undefined"){
@@ -3767,6 +3831,47 @@ document.addEventListener("DOMContentLoaded", () => {
 const AdminPanel = (() => {
   const PASSWORD = "admin888";
   let authed = false;
+  let testSnapshot = null;
+
+  const gameOnlyIds = [
+    "adminWin","adminLose","adminMult2","adminExtraTurn","adminClearHand","adminDraw1","adminDraw5",
+    "adminEnergyMax","adminForceField","adminClearField","adminRunAI","adminSaveSnapshot"
+  ];
+
+  function cloneState(value){
+    if(typeof structuredClone==="function") return structuredClone(value);
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function updateAdminStatus(extra=""){
+    const el=document.getElementById("adminStatus");
+    const hasGame=!!G;
+    const active=hasGame && !G.gameOver;
+    for(const id of gameOnlyIds){
+      const btn=document.getElementById(id);
+      if(btn) btn.disabled=!active;
+    }
+    const restoreBtn=document.getElementById("adminRestoreSnapshot");
+    if(restoreBtn) restoreBtn.disabled=!testSnapshot;
+    if(!el)return;
+    if(!hasGame){
+      el.innerHTML=`当前：<strong>未开始对局</strong>${extra?` · ${extra}`:""}`;
+      return;
+    }
+    const p=currentPlayer();
+    const phase=G.gameOver?"已结束":(G.phase==="play"?"出牌":G.phase==="draw"?"摸牌":G.phase);
+    el.innerHTML=`当前：<strong>${p?.name||"未知"}</strong> · ${phase} · 手牌 ${G.players[0]?.hand.length??0} · 倍数 ${G.multiplier}× · 场地 ${G.field?.name||"无"}${extra?`<br>${extra}`:""}`;
+  }
+
+  function adminFeedback(message,button=null){
+    if(typeof toast==="function") toast(message);
+    updateAdminStatus(message);
+    if(button){
+      button.classList.remove("flash-ok");
+      void button.offsetWidth;
+      button.classList.add("flash-ok");
+    }
+  }
 
   function showPwd() {
     const mask = document.getElementById("adminPwdMask");
@@ -3809,6 +3914,7 @@ const AdminPanel = (() => {
   function showPanel() {
     const panel = document.getElementById("adminPanel");
     if (panel) panel.classList.add("show");
+    updateAdminStatus();
   }
 
   function hidePanel() {
@@ -3942,9 +4048,12 @@ const AdminPanel = (() => {
       });
     }
 
-    // 面板关闭
+    // 面板关闭 + 实时状态刷新
     const closeBtn = document.getElementById("adminPanelClose");
     if (closeBtn) closeBtn.addEventListener("click", hidePanel);
+    setInterval(()=>{
+      if(panel?.classList.contains("show")) updateAdminStatus();
+    },500);
 
     // 音效测试按钮
     document.querySelectorAll("[data-sfx]").forEach(btn => {
@@ -3966,19 +4075,15 @@ const AdminPanel = (() => {
       });
     });
 
-    // 游戏作弊按钮
+    // 对局测试按钮
     const adminWin = document.getElementById("adminWin");
     if (adminWin) adminWin.addEventListener("click", () => {
-      if (G && !G.gameOver && G.players[0]) {
-        win(G.players[0]);
-      }
+      if (G && !G.gameOver && G.players[0]) win(G.players[0]);
     });
 
     const adminLose = document.getElementById("adminLose");
     if (adminLose) adminLose.addEventListener("click", () => {
-      if (G && !G.gameOver && G.players[1]) {
-        win(G.players[1]);
-      }
+      if (G && !G.gameOver && G.players[1]) win(G.players[1]);
     });
 
     const adminAddBeans = document.getElementById("adminAddBeans");
@@ -3991,52 +4096,107 @@ const AdminPanel = (() => {
         AudioSys.SFX.coins();
         AudioSys.FX.coins(1000);
       }
+      adminFeedback("已增加 1000 星石",adminAddBeans);
     });
 
     const adminMult2 = document.getElementById("adminMult2");
     if (adminMult2) adminMult2.addEventListener("click", () => {
-      if (G) {
-        G.multiplier *= 2;
-        render();
-        if (typeof AudioSys !== "undefined") {
-          AudioSys.SFX.multUp();
-          AudioSys.FX.multUp(`倍数 ×${G.multiplier}`);
-        }
+      if (!G || G.gameOver) return;
+      G.multiplier *= 2;
+      render();
+      if (typeof AudioSys !== "undefined") {
+        AudioSys.SFX.multUp();
+        AudioSys.FX.multUp(`倍数 ×${G.multiplier}`);
       }
+      adminFeedback(`当前倍数 ${G.multiplier}×`,adminMult2);
     });
 
     const adminExtraTurn = document.getElementById("adminExtraTurn");
     if (adminExtraTurn) adminExtraTurn.addEventListener("click", () => {
-      if (G && G.players[0]) {
-        G.players[0].extraTurns++;
-        if (typeof AudioSys !== "undefined") {
-          AudioSys.SFX.extraTurn();
-          AudioSys.FX.extraTurn();
-        }
+      if (!G || G.gameOver || !G.players[0]) return;
+      G.players[0].extraTurns++;
+      if (typeof AudioSys !== "undefined") {
+        AudioSys.SFX.extraTurn();
+        AudioSys.FX.extraTurn();
       }
+      adminFeedback(`你的额外回合：${G.players[0].extraTurns}`,adminExtraTurn);
     });
 
     const adminClearHand = document.getElementById("adminClearHand");
     if (adminClearHand) adminClearHand.addEventListener("click", () => {
-      if (G && G.players[0]) {
-        G.players[0].hand = [];
-        render();
-      }
+      if (!G || G.gameOver || !G.players[0]) return;
+      G.players[0].hand = [];
+      selected.clear();
+      render();
+      adminFeedback("已清空你的手牌（不自动判胜）",adminClearHand);
     });
 
+    const drawAdminCards=(count,btn)=>{
+      if (!G || G.gameOver || !G.players[0]) return;
+      drawTo(G.players[0], count, "skill");
+      render();
+      adminFeedback(`已摸 ${count} 张，当前手牌 ${G.players[0].hand.length}`,btn);
+    };
+    const adminDraw1 = document.getElementById("adminDraw1");
+    if (adminDraw1) adminDraw1.addEventListener("click", () => drawAdminCards(1,adminDraw1));
     const adminDraw5 = document.getElementById("adminDraw5");
-    if (adminDraw5) adminDraw5.addEventListener("click", () => {
-      if (G && G.players[0]) {
-        drawTo(G.players[0], 5, "skill");
-        render();
-      }
+    if (adminDraw5) adminDraw5.addEventListener("click", () => drawAdminCards(5,adminDraw5));
+
+    const adminEnergyMax=document.getElementById("adminEnergyMax");
+    if(adminEnergyMax) adminEnergyMax.addEventListener("click",()=>{
+      if(!G || G.gameOver || !G.players[0])return;
+      G.players[0].energy=8;
+      render();
+      adminFeedback(G.players[0].skill.id==="charge"?"充能已设为 8":"能量值已设为 8；当前技能不是充能",adminEnergyMax);
     });
 
     const adminForceField = document.getElementById("adminForceField");
     if (adminForceField) adminForceField.addEventListener("click", async () => {
-      if (G) {
-        await drawField();
-      }
+      if (!G || G.gameOver) return;
+      await drawField();
+      adminFeedback(`场地：${G.field?.name||"无"}`,adminForceField);
+    });
+
+    const adminClearField=document.getElementById("adminClearField");
+    if(adminClearField) adminClearField.addEventListener("click",()=>{
+      if(!G || G.gameOver)return;
+      G.field=null;
+      G.fieldRoundsLeft=0;
+      render();
+      adminFeedback("已清除当前场地",adminClearField);
+    });
+
+    const adminRunAI=document.getElementById("adminRunAI");
+    if(adminRunAI) adminRunAI.addEventListener("click",()=>{
+      if(!G || G.gameOver)return;
+      const p=currentPlayer();
+      if(!p?.isAI){adminFeedback("当前不是 AI 回合");return;}
+      if(aiTimer){clearTimeout(aiTimer);aiTimer=null;}
+      aiAct();
+      adminFeedback(`已立即执行 ${p.name} 的 AI`,adminRunAI);
+    });
+
+    const adminSaveSnapshot=document.getElementById("adminSaveSnapshot");
+    if(adminSaveSnapshot) adminSaveSnapshot.addEventListener("click",()=>{
+      if(!G || G.gameOver)return;
+      testSnapshot={game:cloneState(G),balances:[...beanBalances]};
+      updateAdminStatus("测试快照已保存");
+      adminFeedback("测试快照已保存",adminSaveSnapshot);
+    });
+
+    const adminRestoreSnapshot=document.getElementById("adminRestoreSnapshot");
+    if(adminRestoreSnapshot) adminRestoreSnapshot.addEventListener("click",()=>{
+      if(!testSnapshot)return;
+      clearTimeout(aiTimer); aiTimer=null;
+      G=cloneState(testSnapshot.game);
+      beanBalances.splice(0,beanBalances.length,...testSnapshot.balances);
+      selected.clear();
+      saveBeanBalances();
+      renderStoredBalance();
+      updateTrapArming();
+      render();
+      if(currentPlayer()?.isAI && G.phase==="play") scheduleAI();
+      adminFeedback("已恢复测试快照",adminRestoreSnapshot);
     });
 
     // 快捷工具
@@ -4051,9 +4211,9 @@ const AdminPanel = (() => {
         })));
         console.log("当前玩家:", currentPlayer().name, "阶段:", G.phase);
         console.log("倍数:", G.multiplier);
-        alert("游戏状态已打印到控制台（F12 查看）");
+        adminFeedback("游戏状态已打印到控制台",adminDumpState);
       } else {
-        alert("当前没有进行中的对局");
+        adminFeedback("当前没有进行中的对局");
       }
     });
 
@@ -4069,17 +4229,7 @@ const AdminPanel = (() => {
           }
           render();
         }
-      }
-    });
-
-    const adminSkipAI = document.getElementById("adminSkipAI");
-    if (adminSkipAI) adminSkipAI.addEventListener("click", () => {
-      if (G && aiTimer) {
-        clearTimeout(aiTimer);
-        aiTimer = null;
-        if (typeof aiAct === "function") {
-          aiAct();
-        }
+        adminFeedback("所有玩家星石已重置为 2000",adminResetBeans);
       }
     });
 
@@ -4098,8 +4248,10 @@ const AdminPanel = (() => {
 // 初始化管理员面板
 document.addEventListener("DOMContentLoaded", () => {
   AdminPanel.init();
+  initSaveTransferUI();
 });
 
 // Initial render only
 renderStoredBalance();
 updateLobbyRooms();
+
